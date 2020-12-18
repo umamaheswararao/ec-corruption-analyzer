@@ -1,0 +1,2 @@
+org/apache/hadoop/hdfs/tools/TestECCorruptionAnalyzer.class
+org/apache/hadoop/hdfs/StripedFileTestUtilAccessor.class
