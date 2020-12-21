@@ -29,12 +29,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hdfs.DFSClient;
-import org.apache.hadoop.hdfs.DFSConfigKeys;
 import org.apache.hadoop.hdfs.DFSTestUtil;
 import org.apache.hadoop.hdfs.DistributedFileSystem;
 import org.apache.hadoop.hdfs.HdfsConfiguration;
@@ -45,7 +43,6 @@ import org.apache.hadoop.hdfs.protocol.DatanodeInfo;
 import org.apache.hadoop.hdfs.protocol.DatanodeInfo.AdminStates;
 import org.apache.hadoop.hdfs.protocol.DirectoryListing;
 import org.apache.hadoop.hdfs.protocol.ErasureCodingPolicy;
-import org.apache.hadoop.hdfs.protocol.ExtendedBlock;
 import org.apache.hadoop.hdfs.protocol.HdfsFileStatus;
 import org.apache.hadoop.hdfs.protocol.HdfsLocatedFileStatus;
 import org.apache.hadoop.hdfs.protocol.LocatedBlock;
@@ -169,7 +166,7 @@ public class TestECCorruptionAnalyzer {
             // it should have higher time stamp.
             time++;
           }
-          wr.write(time + "=" + path);
+          wr.write(time + " " + path);
           wr.newLine();
           wr.close();
         }
@@ -196,11 +193,15 @@ public class TestECCorruptionAnalyzer {
   }
 
   private List<ECCorruptFilesAnalyzer.BlockGrpCorruptedBlocks> analyzeECCorruption()
-      throws IOException, URISyntaxException {
+      throws IOException, URISyntaxException, InterruptedException {
     ECCorruptFilesAnalyzer.initStats(statsDirPath, conf);
     Path[] paths = new Path[] {new Path("/")};
-    ECCorruptFilesAnalyzer.Results res = new ECCorruptFilesAnalyzer.Results();
+    ECCorruptFilesAnalyzer.ResultsProcessor res =
+        new ECCorruptFilesAnalyzer.ResultsProcessor();
+    res.start();
     ECCorruptFilesAnalyzer.processNamespace(paths, dfs, res);
+    res.stopProcessorGracefully();
+
     return res.getAllResults().entrySet().iterator().next().getValue();
   }
 
