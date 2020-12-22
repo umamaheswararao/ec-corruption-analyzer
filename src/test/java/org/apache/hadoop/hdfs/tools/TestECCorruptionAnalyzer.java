@@ -30,9 +30,7 @@ import java.util.List;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataOutputStream;
-import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.hdfs.DFSClient;
 import org.apache.hadoop.hdfs.DFSTestUtil;
 import org.apache.hadoop.hdfs.DistributedFileSystem;
 import org.apache.hadoop.hdfs.HdfsConfiguration;
@@ -40,7 +38,6 @@ import org.apache.hadoop.hdfs.MiniDFSCluster;
 import org.apache.hadoop.hdfs.StripedFileTestUtil;
 import org.apache.hadoop.hdfs.StripedFileTestUtilAccessor;
 import org.apache.hadoop.hdfs.protocol.DatanodeInfo;
-import org.apache.hadoop.hdfs.protocol.DatanodeInfo.AdminStates;
 import org.apache.hadoop.hdfs.protocol.DirectoryListing;
 import org.apache.hadoop.hdfs.protocol.ErasureCodingPolicy;
 import org.apache.hadoop.hdfs.protocol.HdfsFileStatus;
@@ -49,7 +46,6 @@ import org.apache.hadoop.hdfs.protocol.LocatedBlock;
 import org.apache.hadoop.hdfs.protocol.LocatedBlocks;
 import org.apache.hadoop.hdfs.protocol.LocatedStripedBlock;
 import org.apache.hadoop.hdfs.server.namenode.FSNamesystem;
-import org.apache.hadoop.hdfs.server.namenode.NameNode;
 import org.apache.hadoop.hdfs.util.StripedBlockUtil;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.junit.After;
@@ -84,9 +80,8 @@ public class TestECCorruptionAnalyzer {
   private final int blockGroupSize = blockSize * dataBlocks;
   private final Path ecDir = new Path("/" + this.getClass().getSimpleName());
 
-  private FSNamesystem fsn;
   private Path statsDirPath = new Path("/test/ecblockstats");
-  private Path zereBlocksPath =
+  private Path zeroBlocksPath =
       new Path(statsDirPath, ECCorruptFilesAnalyzer.ALL_ZEROS_BLOCKS_FOLDER);
   private Path timestampsPath =
       new Path(statsDirPath, ECCorruptFilesAnalyzer.BLOCK_TIME_STAMPS_FOLDER);
@@ -103,14 +98,13 @@ public class TestECCorruptionAnalyzer {
     cluster = new MiniDFSCluster.Builder(conf).numDataNodes(numDNs).build();
     cluster.waitActive();
     dfs = cluster.getFileSystem(0);
-    fsn = cluster.getNamesystem();
 
     dfs.enableErasureCodingPolicy(
         StripedFileTestUtil.getDefaultECPolicy().getName());
     dfs.mkdirs(ecDir);
     dfs.setErasureCodingPolicy(ecDir,
         StripedFileTestUtil.getDefaultECPolicy().getName());
-    dfs.mkdirs(zereBlocksPath);
+    dfs.mkdirs(zeroBlocksPath);
     dfs.mkdirs(timestampsPath);
   }
 
@@ -176,7 +170,7 @@ public class TestECCorruptionAnalyzer {
           // blocks will not be reconstructed. This is to simulate the case and
           // if it happens in older versions, the AllZero block should detected
           // and added into this file.
-          Path allZeros = new Path(zereBlocksPath,
+          Path allZeros = new Path(zeroBlocksPath,
               lbs[i].getLocations()[0].getIpAddr() + lbs[i].getLocations()[0]
                   .getIpcPort() + ".allzerosblks");
           try (FSDataOutputStream fos = dfs.exists(allZeros) ?
@@ -194,21 +188,10 @@ public class TestECCorruptionAnalyzer {
 
   private List<ECCorruptFilesAnalyzer.BlockGrpCorruptedBlocks> analyzeECCorruption()
       throws IOException, URISyntaxException, InterruptedException {
-    ECCorruptFilesAnalyzer.initStats(statsDirPath, conf);
     Path[] paths = new Path[] {new Path("/")};
-    ECCorruptFilesAnalyzer.ResultsProcessor res =
-        new ECCorruptFilesAnalyzer.ResultsProcessor();
-    res.start();
-    ECCorruptFilesAnalyzer.processNamespace(paths, dfs, res);
-    res.stopProcessorGracefully();
-
-    return res.getAllResults().entrySet().iterator().next().getValue();
-  }
-
-  /* Get DFSClient to the namenode */
-  private static DFSClient getDfsClient(NameNode nn, Configuration conf)
-      throws IOException {
-    return new DFSClient(nn.getNameNodeAddress(), conf);
+    ECCorruptFilesAnalyzer analyzer = new ECCorruptFilesAnalyzer();
+    analyzer.analyze(statsDirPath, paths, null , conf);
+    return analyzer.getResults().entrySet().iterator().next().getValue();
   }
 
   private byte[] writeStripedFile(DistributedFileSystem fs, Path ecFile,
@@ -221,30 +204,5 @@ public class TestECCorruptionAnalyzer {
         .checkData(fs, ecFile, writeBytes, new ArrayList<DatanodeInfo>(), null,
             blockGroupSize);
     return bytes;
-  }
-
-  private void cleanupFile(FileSystem fileSys, Path name) throws IOException {
-    assertTrue(fileSys.exists(name));
-    fileSys.delete(name, true);
-    assertTrue(!fileSys.exists(name));
-  }
-
-  /*
-   * Wait till node is fully decommissioned.
-   */
-  private void waitNodeState(DatanodeInfo node, AdminStates state) {
-    boolean done = state == node.getAdminState();
-    while (!done) {
-      LOG.info(
-          "Waiting for node " + node + " to change state to " + state + " current state: " + node
-              .getAdminState());
-      try {
-        Thread.sleep(HEARTBEAT_INTERVAL * 500);
-      } catch (InterruptedException e) {
-        // nothing
-      }
-      done = state == node.getAdminState();
-    }
-    LOG.info("node " + node + " reached the state " + state);
   }
 }

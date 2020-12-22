@@ -30,6 +30,7 @@ import org.apache.hadoop.hdfs.HdfsConfiguration;
 import org.apache.hadoop.hdfs.protocol.Block;
 import org.apache.hadoop.hdfs.protocol.DirectoryListing;
 import org.apache.hadoop.hdfs.protocol.ErasureCodingPolicy;
+import org.apache.hadoop.hdfs.protocol.ErasureCodingPolicyInfo;
 import org.apache.hadoop.hdfs.protocol.ExtendedBlock;
 import org.apache.hadoop.hdfs.protocol.HdfsConstants;
 import org.apache.hadoop.hdfs.protocol.HdfsFileStatus;
@@ -74,15 +75,20 @@ public class ECCorruptFilesAnalyzer {
   private static final int SAFE_BLK_RENAME_PER_NODE_FILE_FLUSH_NUM = 15;
 
   private static ECBlockStatsProvider stats = new ECBlockStatsProvider();
-  private static long EXPECTED_TIME_GAP_BETWEEN_BLOCKS = 2 * 1000;
+  private static long EXPECTED_TIME_GAP_BETWEEN_FILE_AND_BLOCKS = 5 * 60 * 1000;
   static String ALL_ZEROS_BLOCKS_FOLDER = "allzeroblocks";
   static String BLOCK_TIME_STAMPS_FOLDER = "blocktimestamps";
-  private static final  HdfsConfiguration conf = new HdfsConfiguration();
+  private static long expected_time_gap_between_inode_and_blocks =
+      EXPECTED_TIME_GAP_BETWEEN_FILE_AND_BLOCKS;
+  private static Map<String, ErasureCodingPolicy> ecNameVsPolicy = new HashMap<>();
+  private ResultsProcessor results;
+
 
   public static void initStats(Path ecBlockStatsPath, Configuration conf)
       throws IOException, URISyntaxException {
     stats.init(ecBlockStatsPath, conf);
   }
+
 
   /**
    * Main method to start validating service service.
@@ -103,24 +109,35 @@ public class ECCorruptFilesAnalyzer {
       targetPaths[i] = new Path(split[i]);
     }
 
-    Path outPath = args.length>2 ? new Path(args[2]) : null;
+    Path outPath = args.length > 2 ? new Path(args[2]) : null;
+    HdfsConfiguration conf = new HdfsConfiguration();
 
     //For now just use balancer key tab
     secureLogin(conf);
-    DistributedFileSystem dfs = null;
-    ResultsProcessor results = new ResultsProcessor(outPath);
+    ECCorruptFilesAnalyzer analyzer = new ECCorruptFilesAnalyzer();
+    analyzer.analyze(ecBlockStatsPath, targetPaths, outPath, conf);
+  }
+
+  public void analyze(Path ecBlockStatsPath, Path[] targetPaths, Path outPath,
+      Configuration conf)
+      throws IOException, URISyntaxException, InterruptedException {
+    expected_time_gap_between_inode_and_blocks =
+        conf.getLong("ec.analyzer.expected.time.gap.between.file.and.blocks",
+            EXPECTED_TIME_GAP_BETWEEN_FILE_AND_BLOCKS);
+    DistributedFileSystem dfs = new DistributedFileSystem();
+    results = new ResultsProcessor(outPath, conf);
     try {
-      dfs = new DistributedFileSystem();
       dfs.initialize(FileSystem.getDefaultUri(conf), conf);
+      for (ErasureCodingPolicyInfo ecInfo : dfs.getAllErasureCodingPolicies()) {
+        ecNameVsPolicy.put(ecInfo.getPolicy().getName(), ecInfo.getPolicy());
+      }
       initStats(ecBlockStatsPath, conf);
       results.start();
       processNamespace(targetPaths, dfs, results);
       System.out.println(results);
     } finally {
       results.stopProcessorGracefully();
-      if (dfs != null) {
-        dfs.close();
-      }
+      dfs.close();
     }
   }
 
@@ -225,28 +242,27 @@ public class ECCorruptFilesAnalyzer {
             });
 
         for (LocatedBlock block : blocks) {
-          String[] locs=Arrays.stream(block.getLocations()).map(datanodeInfo -> {
-            return datanodeInfo.getIpAddr()+":"+datanodeInfo.getIpcPort();
-          }).toArray(String[]::new);
+          String[] locs =
+              Arrays.stream(block.getLocations()).map(datanodeInfo -> {
+                return datanodeInfo.getIpAddr() + ":" + datanodeInfo
+                    .getIpcPort();
+              }).toArray(String[]::new);
 
           if (stats.allZeroBlockIds.contains(block.getBlock()) && isParityBlock(
               block.getBlock(), dataBlkNum)) { //Currently
             allZeroBlks.add(block);
             pq.offer(new BlockWithStats(block.getBlock(),
                 new Stats(stats.getModifiedTime(block.getBlock()),
-                    stats.getBlockWithPath(block.getBlock()), true,
-                    locs)));
+                    stats.getBlockWithPath(block.getBlock()), true, locs)));
           } else {
             //TODO:// if no blocks in DNs, then modified time is Long.MAX and path is ""
             pq.offer(new BlockWithStats(block.getBlock(),
                 new Stats(stats.getModifiedTime(block.getBlock()),
-                    stats.getBlockWithPath(block.getBlock()), false,
-                    locs)));
+                    stats.getBlockWithPath(block.getBlock()), false, locs)));
           }
         }
         if (allZeroBlks.size() > 0) { // Found all zero blocks
           //Find first created zero block
-          //We are relying on Inode modification time
           LocatedBlock firstAllZeroBlk = allZeroBlks.get(0);
           long firstZeroBlkTime =
               stats.getModifiedTime(firstAllZeroBlk.getBlock());
@@ -269,34 +285,28 @@ public class ECCorruptFilesAnalyzer {
           }
           bgCorruptBlks.add(
               new BlockGrpCorruptedBlocks(Lists.newArrayList(pq.iterator()),
-                  BlockGrpCorruptedBlocks.Corruption_Type.ALL_ZEROS_WITH_ADDITIONAL_BLOCKS,
-                  parityBlkNum));
-          /*results.addToResult(fullPath,
-              new BlockGrpCorruptedBlocks(Lists.newArrayList(pq.iterator()),
-                  BlockGrpCorruptedBlocks.Corruption_Type.ALL_ZEROS_WITH_ADDITIONAL_BLOCKS));*/
+                  BlockGrpCorruptedBlocks.Corruption_Type.ALL_ZEROS_WITH_ADDITIONAL_BLOCKS));
         } else { //No all Zero blocks, but lets check the time variation between
-          // blocks find the time stamps which are going through PQ and check
-          // the time diffs from first created block...Collect all block which
-          // are more than 2s away from first created block
+          // blocks and file modification time.
+          // If appends used, time variation could be high or it could go wrong.
           List<BlockWithStats> possibleCorruptions = new ArrayList<>();
           while (!pq.isEmpty()) {
             BlockWithStats nextCreatedBlk = pq.remove();
             if (Math.abs(
-                nextCreatedBlk.stats.time - inodeModificationTime) > EXPECTED_TIME_GAP_BETWEEN_BLOCKS) {
+                nextCreatedBlk.stats.time - inodeModificationTime) > expected_time_gap_between_inode_and_blocks) {
               possibleCorruptions.add(nextCreatedBlk);
             }
           }
 
           if (possibleCorruptions.size() > 0) {
             bgCorruptBlks.add(new BlockGrpCorruptedBlocks(possibleCorruptions,
-                BlockGrpCorruptedBlocks.Corruption_Type.MORE_VARIED_TIME_STAMPS,
-                parityBlkNum));
+                BlockGrpCorruptedBlocks.Corruption_Type.MORE_VARIED_TIME_STAMPS));
           }
         }
       }
 
-      if(bgCorruptBlks.size()>0){
-        results.addToResult(fullPath, bgCorruptBlks);
+      if (bgCorruptBlks.size() > 0) {
+        results.addToResult(fullPath, bgCorruptBlks, ecPolicy.getName());
       }
     }
   }
@@ -305,19 +315,21 @@ public class ECCorruptFilesAnalyzer {
     return StripedBlockUtil.getBlockIndex(block.getLocalBlock()) >= i;
   }
 
+  public Map<String, List<BlockGrpCorruptedBlocks>> getResults(){
+    return this.results.results;
+  }
+
   /**
-   *
+   * ECBlockStatsProvider loads the stats files generated by all datanodes.
    */
   static class ECBlockStatsProvider {
     FileSystem fs;
-    // <ECBlockStatsDir>/allzeroblocks/dnhost.txt
-    //dnhost
-    // <ECBlockStatsDir>/blocktimestamps/
+    // <ECBlockStatsDir>/allzeroblocks/dnhost
+    // <ECBlockStatsDir>/blocktimestamps/dnhost
     private List<ExtendedBlock> allZeroBlockIds = new ArrayList<>();
     private Map<ExtendedBlock, Stats> blockVsModifiedTime = new HashMap<>();
 
-    public void init(Path statsPath, Configuration conf)
-        throws IOException, URISyntaxException {
+    public void init(Path statsPath, Configuration conf) throws IOException {
       fs = FileSystem.get(statsPath.toUri(), conf);
       FileStatus[] fStatus = fs.listStatus(statsPath);
       if (fStatus.length < 2) {
@@ -488,15 +500,15 @@ public class ECCorruptFilesAnalyzer {
   }
 
   public static class ResultsProcessor extends Thread {
-    private final Path consolidatedResultPath;
-    private final Path unrecoverableBlkGrpResultPath;
+    private Path consolidatedResultPath = null;
+    private Path unrecoverableBlkGrpResultPath = null;
     private BufferedWriter bwForConsolidatedResultPath = null;
-    private BufferedWriter bwForunrecoverableBlkGrpResultPath = null;
+    private BufferedWriter bwForUnrecoverableBlkGrpResultPath = null;
     private Path outPutPath;
     private Path safeBlksToRenamePath;
     private FileSystem fs;
 
-    public ResultsProcessor(Path outPutPath) throws IOException {
+    public ResultsProcessor(Path outPutPath, Configuration conf) throws IOException {
       this.outPutPath = outPutPath;
       fs = this.outPutPath != null ? this.outPutPath.getFileSystem(conf) : null;
       this.safeBlksToRenamePath = this.outPutPath != null ?
@@ -513,7 +525,7 @@ public class ECCorruptFilesAnalyzer {
           new Path(this.outPutPath, "UnrecoverableBlkGrpResult") :
           null;
       if (this.unrecoverableBlkGrpResultPath != null) {
-        bwForunrecoverableBlkGrpResultPath = new BufferedWriter(
+        bwForUnrecoverableBlkGrpResultPath = new BufferedWriter(
             new OutputStreamWriter(
                 fs.create(this.unrecoverableBlkGrpResultPath)));
       }
@@ -526,35 +538,32 @@ public class ECCorruptFilesAnalyzer {
     private Queue<CorruptFileBlockGroups> queue = new LinkedList<>();
     private Map<String, List<String>> safeBlocksToRename = new HashMap<>();
 
-    public ResultsProcessor() throws IOException {
-      this(null);
-    }
-
     public Map<String, List<BlockGrpCorruptedBlocks>> getAllResults() {
       return this.results;
     }
 
-    public void addToResult(String file, List<BlockGrpCorruptedBlocks> bgCorruptBlks) {
-      queue.offer(new CorruptFileBlockGroups(file, bgCorruptBlks));
+    public void addToResult(String file, List<BlockGrpCorruptedBlocks> bgCorruptBlks, String policyName) {
+      queue.offer(new CorruptFileBlockGroups(file, bgCorruptBlks, policyName));
     }
 
     @Override
     public void run() {
       running = true;
-      while(running){
+      while(running) {
         CorruptFileBlockGroups fileBlkGrps = queue.poll();
-        if(fileBlkGrps!=null) {
-          if(this.outPutPath == null){
+        if (fileBlkGrps != null) {
+          if (this.outPutPath == null) {
             // This is just in memory and testing.
-            results.put(fileBlkGrps.getFileName(), fileBlkGrps.corruptBlockGroups);
+            results
+                .put(fileBlkGrps.getFileName(), fileBlkGrps.corruptBlockGroups);
             continue;
           }
           List<BlockGrpCorruptedBlocks> blockGrpCorruptedBlocks =
               fileBlkGrps.getBlockGrpCorruptedBlocks();
-          for(int i=0;i< blockGrpCorruptedBlocks.size(); i++){
-            BlockGrpCorruptedBlocks blkGrp =
-                blockGrpCorruptedBlocks.get(i);
-            if (blkGrp.getBlocks().size() <= blkGrp.parity) {
+          for (int i = 0; i < blockGrpCorruptedBlocks.size(); i++) {
+            BlockGrpCorruptedBlocks blkGrp = blockGrpCorruptedBlocks.get(i);
+            if (blkGrp.getBlocks().size() <= ecNameVsPolicy
+                .get(fileBlkGrps.getECPolicyName()).getNumParityUnits()) {
               System.out.println(
                   "Found recoverable block group in file:" + fileBlkGrps
                       .getFileName() + " impacted blks : " + blkGrp
@@ -566,14 +575,15 @@ public class ECCorruptFilesAnalyzer {
                 paths.add(blk.stats.path);
                 safeBlocksToRename.put(blk.stats.locations[0], paths);
               }
-            }else{
+            } else {
               //unrecoverable block groups detected.
               try {
-                bwForunrecoverableBlkGrpResultPath.write(blkGrp.toString());
-                bwForunrecoverableBlkGrpResultPath.newLine();
-                bwForunrecoverableBlkGrpResultPath.flush();
+                bwForUnrecoverableBlkGrpResultPath.write(blkGrp.toString());
+                bwForUnrecoverableBlkGrpResultPath.newLine();
+                bwForUnrecoverableBlkGrpResultPath.flush();
               } catch (IOException e) {
-                LOG.error("Unable to write unrecoverable block groups details", e);
+                LOG.error("Unable to write unrecoverable block groups details",
+                    e);
               }
             }
 
@@ -583,19 +593,20 @@ public class ECCorruptFilesAnalyzer {
               bwForConsolidatedResultPath.newLine();
               bwForConsolidatedResultPath.flush();
             } catch (IOException e) {
-              LOG.error("Unable to write consolidated impacted block groups details", e);
+              LOG.error(
+                  "Unable to write consolidated impacted block groups details",
+                  e);
             }
 
           }
 
           //check if we can flush to files
-          if(safeBlocksToRename.size()>0){
+          if (safeBlocksToRename.size() > 0) {
             writeSafeToRenameBlockPaths(safeBlocksToRename,
                 SAFE_BLK_RENAME_PER_NODE_FILE_FLUSH_NUM);
           }
 
-
-        }else{
+        } else {
           try {
             Thread.sleep(1000);
           } catch (InterruptedException e) {
@@ -634,7 +645,6 @@ public class ECCorruptFilesAnalyzer {
               LOG.error("Unable to write to safe to rename blocks path", e);
             }
           }//fs not available
-
           iter.remove();
         }
       }
@@ -654,8 +664,8 @@ public class ECCorruptFilesAnalyzer {
         bwForConsolidatedResultPath.close();
       }
 
-      if(bwForunrecoverableBlkGrpResultPath!=null){
-        bwForunrecoverableBlkGrpResultPath.close();
+      if(bwForUnrecoverableBlkGrpResultPath !=null){
+        bwForUnrecoverableBlkGrpResultPath.close();
       }
 
       this.interrupt();
@@ -669,16 +679,22 @@ public class ECCorruptFilesAnalyzer {
 
   static class CorruptFileBlockGroups{
      private String file;
+     private String ecPolicyName;
      private List<BlockGrpCorruptedBlocks> corruptBlockGroups;
 
-     public CorruptFileBlockGroups(String file, List<BlockGrpCorruptedBlocks> corruptBlockGroups){
+     public CorruptFileBlockGroups(String file, List<BlockGrpCorruptedBlocks> corruptBlockGroups, String ecPolicyName){
        this.file = file;
        this.corruptBlockGroups = corruptBlockGroups;
+       this.ecPolicyName = ecPolicyName;
      }
 
      public String getFileName(){
        return this.file;
      }
+
+    public String getECPolicyName(){
+      return this.ecPolicyName;
+    }
 
     public List<BlockGrpCorruptedBlocks> getBlockGrpCorruptedBlocks(){
       return this.corruptBlockGroups;
@@ -686,8 +702,6 @@ public class ECCorruptFilesAnalyzer {
   }
 
   static class BlockGrpCorruptedBlocks {
-    private final int parity;
-
     static enum Corruption_Type {
       ALL_ZEROS_WITH_ADDITIONAL_BLOCKS, MORE_VARIED_TIME_STAMPS;
     }
@@ -696,10 +710,9 @@ public class ECCorruptFilesAnalyzer {
     private Corruption_Type type;
 
     public BlockGrpCorruptedBlocks(List<BlockWithStats> blkWithTimeStamp,
-        Corruption_Type type, int parity) {
+        Corruption_Type type) {
       this.blkWithTimeStamp = blkWithTimeStamp;
       this.type = type;
-      this.parity = parity;
     }
 
     public List<BlockWithStats> getBlocks() {
