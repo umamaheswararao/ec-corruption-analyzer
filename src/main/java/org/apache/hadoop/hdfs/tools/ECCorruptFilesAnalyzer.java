@@ -17,6 +17,7 @@
  */
 package org.apache.hadoop.hdfs.tools;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FSDataOutputStream;
@@ -73,7 +74,7 @@ public class ECCorruptFilesAnalyzer {
   public static final Logger LOG =
       LoggerFactory.getLogger(ECCorruptFilesAnalyzer.class);
   private static final int SAFE_BLK_RENAME_PER_NODE_FILE_FLUSH_NUM = 15;
-
+  private static final ObjectMapper MAPPER = new ObjectMapper();
   private static ECBlockStatsProvider stats = new ECBlockStatsProvider();
   private static long EXPECTED_TIME_GAP_BETWEEN_FILE_AND_BLOCKS = 5 * 60 * 1000;
   static String ALL_ZEROS_BLOCKS_FOLDER = "allzeroblocks";
@@ -286,7 +287,7 @@ public class ECCorruptFilesAnalyzer {
           bgCorruptBlks.add(
               new BlockGrpCorruptedBlocks(Lists.newArrayList(pq.iterator()),
                   BlockGrpCorruptedBlocks.Corruption_Type.ALL_ZEROS_WITH_ADDITIONAL_BLOCKS));
-        } else { //No all Zero blocks, but lets check the time variation between
+        } else { //No allZero blocks, but lets check the time variation between
           // blocks and file modification time.
           // If appends used, time variation could be high or it could go wrong.
           List<BlockWithStats> possibleCorruptions = new ArrayList<>();
@@ -464,6 +465,14 @@ public class ECCorruptFilesAnalyzer {
       return stats.time;
     }
 
+    public void setStats(Stats stats) {
+      this.stats = stats;
+    }
+
+    public void setBlock(ExtendedBlock block) {
+      this.block = block;
+    }
+
     public ExtendedBlock getBlock() {
       return this.block;
     }
@@ -492,9 +501,21 @@ public class ECCorruptFilesAnalyzer {
       this.locations = locations;
     }
 
+    public void setAllZeros(boolean allZeros) {
+      isAllZeros = allZeros;
+    }
+
+    public void setPath(String path) {
+      this.path = path;
+    }
+
+    public void setTime(long time) {
+      this.time = time;
+    }
+
     @Override
     public String toString() {
-      return "Stats{" + "time=" + time + ", path='" + path + '\'' + ", isAllZeros=" + isAllZeros + " lications: " + Arrays
+      return "Stats{" + "time=" + time + ", path='" + path + '\'' + ", isAllZeros=" + isAllZeros + " locations: " + Arrays
           .toString(locations) + '}';
     }
   }
@@ -560,6 +581,9 @@ public class ECCorruptFilesAnalyzer {
           }
           List<BlockGrpCorruptedBlocks> blockGrpCorruptedBlocks =
               fileBlkGrps.getBlockGrpCorruptedBlocks();
+
+          List<BlockGrpJson> consolidatedBlkGrpJson = new ArrayList<>();
+          List<BlockGrpJson> unrecoverableBlkGrpJson = new ArrayList<>();
           for (int i = 0; i < blockGrpCorruptedBlocks.size(); i++) {
             BlockGrpCorruptedBlocks blkGrp = blockGrpCorruptedBlocks.get(i);
             if (blkGrp.getBlocks().size() <= ecNameVsPolicy
@@ -577,27 +601,52 @@ public class ECCorruptFilesAnalyzer {
               }
             } else {
               //unrecoverable block groups detected.
-              try {
-                bwForUnrecoverableBlkGrpResultPath.write(blkGrp.toString());
-                bwForUnrecoverableBlkGrpResultPath.newLine();
-                bwForUnrecoverableBlkGrpResultPath.flush();
-              } catch (IOException e) {
-                LOG.error("Unable to write unrecoverable block groups details",
-                    e);
+              List<BlockJson> unrecoverableBlksJson = new ArrayList<>();
+              for (BlockWithStats blk : blkGrp.getBlocks()) {
+                unrecoverableBlksJson.add(new BlockJson(blk.stats.path, blk.stats.time));
               }
+              consolidatedBlkGrpJson.add(new BlockGrpJson(unrecoverableBlksJson));
+
             }
 
             //consolidated
+            List<BlockJson> consolBlksJson = new ArrayList<>();
+            for (BlockWithStats blk : blkGrp.getBlocks()) {
+              consolBlksJson.add(new BlockJson(blk.stats.path, blk.stats.time));
+            }
+            consolidatedBlkGrpJson.add(new BlockGrpJson(consolBlksJson));
+          }
+
+          long totalBlockGrpNum =
+              ecNameVsPolicy.get(fileBlkGrps.getECPolicyName())
+                  .getNumParityUnits() + ecNameVsPolicy
+                  .get(fileBlkGrps.getECPolicyName()).getNumDataUnits();
+
+          if (unrecoverableBlkGrpJson.size() > 0) {
             try {
-              bwForConsolidatedResultPath.write(blkGrp.toString());
-              bwForConsolidatedResultPath.newLine();
-              bwForConsolidatedResultPath.flush();
+              bwForUnrecoverableBlkGrpResultPath.write(
+                  MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(
+                      new ECFileJson(fileBlkGrps.file, totalBlockGrpNum,
+                          unrecoverableBlkGrpJson)));
+              bwForUnrecoverableBlkGrpResultPath.newLine();
+              bwForUnrecoverableBlkGrpResultPath.flush();
             } catch (IOException e) {
-              LOG.error(
-                  "Unable to write consolidated impacted block groups details",
+              LOG.error("Unable to write unrecoverable block groups details",
                   e);
             }
+          }
 
+          try {
+            bwForConsolidatedResultPath.write(
+                MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(
+                    new ECFileJson(fileBlkGrps.file, totalBlockGrpNum,
+                        consolidatedBlkGrpJson)));
+            bwForConsolidatedResultPath.newLine();
+            bwForConsolidatedResultPath.flush();
+          } catch (IOException e) {
+            LOG.error(
+                "Unable to write consolidated impacted block groups details",
+                e);
           }
 
           //check if we can flush to files
@@ -757,5 +806,85 @@ public class ECCorruptFilesAnalyzer {
     }
     return sb.toString();
   }
+
+  static class BlockJson{
+    private String blkPath;
+    private long time;
+
+    public BlockJson(String blkPath, long time){
+      this.blkPath = blkPath;
+      this.time = time;
+    }
+
+    public void setTime(long time) {
+      this.time = time;
+    }
+
+    public long getTime() {
+      return time;
+    }
+
+    public void setBlkPath(String blkPath) {
+      this.blkPath = blkPath;
+    }
+
+    public String getBlkPath() {
+      return blkPath;
+    }
+  }
+
+  static class BlockGrpJson{
+    private List<BlockJson> blockJson;
+    public BlockGrpJson(List<BlockJson> blockJson){
+      this.blockJson = blockJson;
+    }
+
+    public void setBlockJson(List<BlockJson> blockJson) {
+      this.blockJson = blockJson;
+    }
+
+    public List<BlockJson> getBlockJson() {
+      return blockJson;
+    }
+  }
+
+  static class ECFileJson {
+    String fileName;
+    private long blockGroupSize;
+    private List<BlockGrpJson> blkGrp;
+
+    public ECFileJson(String fileName, long blockGroupSize, List<BlockGrpJson> blkGrp){
+      this.fileName = fileName;
+      this.blockGroupSize = blockGroupSize;
+      this.blkGrp = blkGrp;
+    }
+
+
+    public long getBlockGroupSize() {
+      return blockGroupSize;
+    }
+
+    public void setBlockGroupSize(long blockGroupSize) {
+      this.blockGroupSize = blockGroupSize;
+    }
+
+    public void setFileName(String fileName) {
+      this.fileName = fileName;
+    }
+
+    public String getFileName() {
+      return fileName;
+    }
+
+    public void setBlkGrp(List<BlockGrpJson> blkGrp) {
+      this.blkGrp = blkGrp;
+    }
+    public List<BlockGrpJson> getBlkGrp() {
+      return blkGrp;
+    }
+  }
+
+
+
 }
 
