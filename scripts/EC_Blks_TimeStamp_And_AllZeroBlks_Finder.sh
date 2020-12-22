@@ -1,51 +1,56 @@
 #!/bin/bash
 #provide all data dir paths by comma separated
-DATADIRS=/dataroot/ycloud,/dataroot/ycloud1
+#DATA_DIRS=/dataroot/ycloud,/dataroot/ycloud1
+DATA_DIRS=$1
 
-TMP_ALL_ZERO_BLKS_RESULT=/tmp/all_zero_blks_result.txt
-TMP_ALL_BLK_PATHS=/tmp/all_blk_paths_result.txt
+TMP_ALL_ZERO_BLKS_RESULT=/tmp/all_zero_blks_result$$.txt
+TMP_ALL_BLK_PATHS_WITH_TIMESTAMP_RESULT=/tmp/all_blk_paths_result$$.txt
 HDFS_OUTPUT_DIR=/scanning/
 
 
 rm -rf $TMP_ALL_ZERO_BLKS_RESULT
-rm -rf $TMP_ALL_BLK_PATHS
+rm -rf $TMP_ALL_BLK_PATHS_WITH_TIMESTAMP_RESULT
 
 #Scans for the block timestamps and  all zeros blocks
 findBlkTimeStampAndAllZeroBlocksInDir(){
   echo "Scanning dir:" $1
-  LOCAL_OUT_FILE=$2
-  blocks=$(find $1 -type f -iname "*blk_-*" | awk '!/.meta/{print }' | awk '/BP-/{print}')
-  #echo $blocks
-  for word in $blocks
+
+  for blockPath in $(find $1 -type f -iname "*blk_*" | awk '!/.meta/{print }' | awk '/BP-/{print}')
   do
-      #echo The word is $word
-      BLK_PATH_WITH_TIME_STAMP=$(stat -c '%.9Y %n' $word)
-      echo $BLK_PATH_WITH_TIME_STAMP >>$TMP_ALL_BLK_PATHS
-      
+      #echo The block path is $blockPath
+      BLK_PATH_WITH_TIME_STAMP=$(stat -c '%.9Y %n' $blockPath)
+      echo $BLK_PATH_WITH_TIME_STAMP >>$TMP_ALL_BLK_PATHS_WITH_TIMESTAMP_RESULT
+
       #Find if it's a allzero block
-      compare=$(cmp  $word /dev/zero)
-      if [[ $compare = "" ]]; then echo $word | uniq >>$LOCAL_OUT_FILE; fi
+      compare=$(cmp  $blockPath /dev/zero)
+      if [[ $compare = "" ]]; then echo $blockPath | uniq >>$TMP_ALL_ZERO_BLKS_RESULT; fi
   done
 }
 
 # Loop over to all data directories and call findBlkTimeStampAndAllZeroBlocksInDir function for finding timestamp and all zero blocks
-for DATADIR in $(echo $DATADIRS | sed "s/,/ /g")
+for DATADIR in $(echo $DATA_DIRS | sed "s/,/ /g")
 do
-    findBlkTimeStampAndAllZeroBlocksInDir $DATADIR $TMP_ALL_ZERO_BLKS_RESULT
+    findBlkTimeStampAndAllZeroBlocksInDir "$DATADIR"
 done
+
+echo "Scanning finished"
 
 
 #write the result files to HDFS
 
 #cleanup
-sudo -u hdfs hdfs dfs -rmr -skipTrash  $HDFS_OUTPUT_DIR/allzeroblocks/$HOSTNAME
-sudo -u hdfs hdfs dfs -rmr -skipTrash  $HDFS_OUTPUT_DIR/blocktimestamps/$HOSTNAME
+echo "Trying to cleanup the old result files"
+hdfs dfs -rm -r -skipTrash  $HDFS_OUTPUT_DIR/allzeroblocks/$HOSTNAME
+hdfs dfs -rm -r -skipTrash  $HDFS_OUTPUT_DIR/blocktimestamps/$HOSTNAME
 
 #setup output dirs
-sudo -u hdfs hdfs dfs -mkdir $HDFS_OUTPUT_DIR
-sudo -u hdfs hdfs dfs -mkdir $HDFS_OUTPUT_DIR/allzeroblocks
-sudo -u hdfs hdfs dfs -mkdir $HDFS_OUTPUT_DIR/blocktimestamps
+hdfs dfs -mkdir -p $HDFS_OUTPUT_DIR
+hdfs dfs -mkdir -p $HDFS_OUTPUT_DIR/allzeroblocks
+hdfs dfs -mkdir -p $HDFS_OUTPUT_DIR/blocktimestamps
 
 #write the files to hdfs
-sudo -u hdfs hdfs dfs -put $TMP_ALL_ZERO_BLKS_RESULT $HDFS_OUTPUT_DIR/allzeroblocks/$HOSTNAME
-sudo -u hdfs hdfs dfs -put $TMP_ALL_BLK_PATHS $HDFS_OUTPUT_DIR/blocktimestamps/$HOSTNAME
+echo "Uploading the block timestamp and allzero blocks scanning results to hdfs"
+hdfs dfs -put $TMP_ALL_ZERO_BLKS_RESULT $HDFS_OUTPUT_DIR/allzeroblocks/$HOSTNAME
+hdfs dfs -put $TMP_ALL_BLK_PATHS_WITH_TIMESTAMP_RESULT $HDFS_OUTPUT_DIR/blocktimestamps/$HOSTNAME
+
+echo "Uploaded the results to HDFS location at $HDFS_OUTPUT_DIR"
