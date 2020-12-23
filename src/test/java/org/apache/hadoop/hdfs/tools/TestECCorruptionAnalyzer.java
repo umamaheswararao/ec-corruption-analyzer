@@ -17,8 +17,6 @@
  */
 package org.apache.hadoop.hdfs.tools;
 
-import static org.junit.Assert.assertTrue;
-
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.IOException;
@@ -31,6 +29,7 @@ import java.util.List;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hdfs.DFSConfigKeys;
 import org.apache.hadoop.hdfs.DFSTestUtil;
 import org.apache.hadoop.hdfs.DistributedFileSystem;
 import org.apache.hadoop.hdfs.HdfsConfiguration;
@@ -45,7 +44,6 @@ import org.apache.hadoop.hdfs.protocol.HdfsLocatedFileStatus;
 import org.apache.hadoop.hdfs.protocol.LocatedBlock;
 import org.apache.hadoop.hdfs.protocol.LocatedBlocks;
 import org.apache.hadoop.hdfs.protocol.LocatedStripedBlock;
-import org.apache.hadoop.hdfs.server.namenode.FSNamesystem;
 import org.apache.hadoop.hdfs.util.StripedBlockUtil;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.junit.After;
@@ -56,9 +54,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.file.Files;
+import java.util.Map;
 
 /**
- * This class tests the decommissioning of datanode with striped blocks.
+ * This class tests the parsing of DN block stats and building the EC analysis
+ * report.
  */
 public class TestECCorruptionAnalyzer {
   private static final Logger LOG =
@@ -94,6 +94,7 @@ public class TestECCorruptionAnalyzer {
   public void setup() throws IOException {
     conf = createConfiguration();
     conf.set("dfs.block.local-path-access.user", UserGroupInformation.getCurrentUser().getUserName());
+    conf.setLong(DFSConfigKeys.DFS_BLOCK_SIZE_KEY, blockSize);
     numDNs = dataBlocks + parityBlocks + 6;
     cluster = new MiniDFSCluster.Builder(conf).numDataNodes(numDNs).build();
     cluster.waitActive();
@@ -118,18 +119,64 @@ public class TestECCorruptionAnalyzer {
 
   @Test(timeout = 30000)
   public void testECCorruptFileAnalyzerWithBlockGroups() throws Exception {
-    byte busyDNIndex = 6;
+    List<Byte> busyNodes = new ArrayList<>();
+    busyNodes.add((byte)6);
     //1. create EC file
     final Path ecFile = new Path(ecDir, "ECCorruptFileAnalyzer");
     int writeBytes = cellSize * dataBlocks;
     writeStripedFile(dfs, ecFile, writeBytes);
-    generateStatsFiles(busyDNIndex, ecFile);
-    List<ECCorruptFilesAnalyzer.BlockGrpCorruptedBlocks> corruptedBlockGrps =
-        analyzeECCorruption();
-    Assert.assertEquals(1, corruptedBlockGrps.size());
+    generateStatsFiles(busyNodes, ecFile, 5 * 60 * 1000 + 1);
+    Map<String, List<ECCorruptFilesAnalyzer.BlockGroup>>
+        stringListMap = analyzeECCorruption();
+    Assert.assertEquals(1, stringListMap.size());
   }
 
-  private void generateStatsFiles(byte busyDNIndex, Path ecFile)
+  @Test(timeout = 300000)
+  public void testECCorruptFileAnalyzerWithMultipleBlockGroups() throws Exception {
+    List<Byte> corruptBlockIndices = new ArrayList<>();
+    corruptBlockIndices.add((byte)1);
+    corruptBlockIndices.add((byte)2);
+    corruptBlockIndices.add((byte)6);
+
+    //2 block group sizes
+    int writeBytes = 2 * cellSize * dataBlocks;
+
+    final Path ecRecoverableFile1 = new Path(ecDir, "ECCorruptFileAnalyzer-recoverable");
+    writeECFile(ecRecoverableFile1, writeBytes);
+
+    final Path ecRecoverableFile2 = new Path(ecDir, "ECCorruptFileAnalyzer-recoverable-1");
+    writeECFile(ecRecoverableFile2, writeBytes);
+
+    //Simulating to generate block statistics from all DNs for a given file blocks
+    generateStatsFiles(corruptBlockIndices, ecRecoverableFile1, 5 * 60 * 1000 + 1);
+    generateStatsFiles(corruptBlockIndices, ecRecoverableFile2, 5 * 60 * 1000 + 1);
+
+
+    // >4 corrupt: making below file unrecoverable
+    corruptBlockIndices.add((byte)8);
+    final Path ecUnrecoverableFile1 = new Path(ecDir, "ECCorruptFileAnalyzer-unrecoverable");
+    writeECFile(ecUnrecoverableFile1, writeBytes);
+
+    //Simulating to generate block statistics from all DNs for a given file blocks
+    generateStatsFiles(corruptBlockIndices, ecUnrecoverableFile1,  5 * 60 * 1000 + 1);
+
+
+    Map<String, List<ECCorruptFilesAnalyzer.BlockGroup>> corruptedBlockGrps =
+        analyzeECCorruption();
+    Assert.assertEquals(3, corruptedBlockGrps.size());
+  }
+
+  private void writeECFile(Path ecFile, int writeBytes) throws IOException {
+    try (FSDataOutputStream fos = dfs.create(ecFile)) {
+      BufferedWriter br = new BufferedWriter(new OutputStreamWriter(fos));
+      for (int i = 0; i < writeBytes; i++) {
+        br.write('c');
+      }
+      br.close();
+    }
+  }
+
+  private void generateStatsFiles(List<Byte> busyDNIndexes, Path ecFile, int timeToIncr)
       throws IOException {
     DirectoryListing directoryListing =
         dfs.getClient().listPaths(ecFile.toString(), "".getBytes(), true);
@@ -140,6 +187,7 @@ public class TestECCorruptionAnalyzer {
       LocatedBlock[] lbs = StripedBlockUtil.parseStripedBlockGroup(
           (LocatedStripedBlock) locatedBlocks.getLocatedBlocks().get(bg),
           cellSize, dataBlocks, parityBlocks);
+      long timeNow = System.currentTimeMillis();
       for (int i = 0; i < dataBlocks + parityBlocks; i++) {
         java.nio.file.Path path = new File(
             cluster.getDataNode(lbs[i].getLocations()[0].getIpcPort())
@@ -153,19 +201,19 @@ public class TestECCorruptionAnalyzer {
             dfs.append(timeStampsFile) :
             dfs.create(timeStampsFile)) {
           BufferedWriter wr = new BufferedWriter(new OutputStreamWriter(fos));
-          long time = lastModifiedTime.toMillis();
-          if (i == busyDNIndex) {
+          long time = timeNow;
+          if (busyDNIndexes.contains((byte)i)) {
             // in Hadoop >3.3.0 versions the bug has been fixed. So all zero
             // blocks will not be reconstructed. This is to simulate the case and
             // it should have higher time stamp.
-            time++;
+            time = time + timeToIncr;
           }
           wr.write(time + " " + path);
           wr.newLine();
           wr.close();
         }
 
-        if (i == busyDNIndex) {
+        if (busyDNIndexes.contains((byte)i)) {
           // In >Hadoop 3.3.0 versions the bug has been fixed. So all zero
           // blocks will not be reconstructed. This is to simulate the case and
           // if it happens in older versions, the AllZero block should detected
@@ -186,12 +234,14 @@ public class TestECCorruptionAnalyzer {
     }
   }
 
-  private List<ECCorruptFilesAnalyzer.BlockGrpCorruptedBlocks> analyzeECCorruption()
+  private Map<String, List<ECCorruptFilesAnalyzer.BlockGroup>> analyzeECCorruption()
       throws IOException, URISyntaxException, InterruptedException {
     Path[] paths = new Path[] {new Path("/")};
     ECCorruptFilesAnalyzer analyzer = new ECCorruptFilesAnalyzer();
-    analyzer.analyze(statsDirPath, paths, null , conf);
-    return analyzer.getResults().entrySet().iterator().next().getValue();
+    //Path out = new Path("file:///Users/umagangumalla/Work/repos/PRs/Todelete/ec-corruption-analyzer/test/testOut");
+    analyzer.analyze(statsDirPath, paths, null, conf);
+    analyzer.stop();
+    return analyzer.getResults();
   }
 
   private byte[] writeStripedFile(DistributedFileSystem fs, Path ecFile,

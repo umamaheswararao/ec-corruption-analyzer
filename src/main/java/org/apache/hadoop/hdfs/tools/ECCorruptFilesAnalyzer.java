@@ -28,7 +28,6 @@ import org.apache.hadoop.hdfs.DFSClient;
 import org.apache.hadoop.hdfs.DFSConfigKeys;
 import org.apache.hadoop.hdfs.DistributedFileSystem;
 import org.apache.hadoop.hdfs.HdfsConfiguration;
-import org.apache.hadoop.hdfs.protocol.Block;
 import org.apache.hadoop.hdfs.protocol.DirectoryListing;
 import org.apache.hadoop.hdfs.protocol.ErasureCodingPolicy;
 import org.apache.hadoop.hdfs.protocol.ErasureCodingPolicyInfo;
@@ -65,6 +64,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.PriorityQueue;
 import java.util.Queue;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -222,11 +222,14 @@ public class ECCorruptFilesAnalyzer {
     final LocatedBlocks locatedBlocks = status.getBlockLocations();
     long inodeModificationTime = status.getModificationTime();
     final ErasureCodingPolicy ecPolicy = locatedBlocks.getErasureCodingPolicy();
+
     if (ecPolicy != null) { //Found EC file
+      int totalBlockGrpNum =
+          ecPolicy.getNumDataUnits() + ecPolicy.getNumParityUnits();
       final int cellSize = ecPolicy.getCellSize();
       final int dataBlkNum = ecPolicy.getNumDataUnits();
       final int parityBlkNum = ecPolicy.getNumParityUnits();
-      List<BlockGrpCorruptedBlocks> bgCorruptBlks = new ArrayList<>();
+      List<BlockGroup> bgCorruptBlks = new ArrayList<>();
       // Scan all block groups in this file
       for (LocatedBlock firstBlock : locatedBlocks.getLocatedBlocks()) {
         LocatedBlock[] blocks = StripedBlockUtil
@@ -234,11 +237,11 @@ public class ECCorruptFilesAnalyzer {
                 dataBlkNum, parityBlkNum);
         //check if any internal block has allZeros
         List<LocatedBlock> allZeroBlks = new ArrayList<>();
-        PriorityQueue<BlockWithStats> pq =
-            new PriorityQueue<>(new Comparator<BlockWithStats>() {
+        PriorityQueue<Block> pq =
+            new PriorityQueue<>(new Comparator<Block>() {
               @Override
-              public int compare(BlockWithStats o1, BlockWithStats o2) {
-                return o1.getTime().compareTo(o2.getTime());
+              public int compare(Block o1, Block o2) {
+                return o1.getTimeStamp().compareTo(o2.getTimeStamp());
               }
             });
 
@@ -248,18 +251,19 @@ public class ECCorruptFilesAnalyzer {
                 return datanodeInfo.getIpAddr() + ":" + datanodeInfo
                     .getIpcPort();
               }).toArray(String[]::new);
-
-          if (stats.allZeroBlockIds.contains(block.getBlock()) && isParityBlock(
-              block.getBlock(), dataBlkNum)) { //Currently
+          boolean isParity = isParityBlock(
+              block.getBlock(), dataBlkNum);
+          if (stats.allZeroBlockIds
+              .contains(block.getBlock()) && isParity) { //Currently
             allZeroBlks.add(block);
-            pq.offer(new BlockWithStats(block.getBlock(),
-                new Stats(stats.getModifiedTime(block.getBlock()),
-                    stats.getBlockWithPath(block.getBlock()), true, locs)));
+            pq.offer(new Block(block.getBlock(),
+                stats.getBlockWithPath(block.getBlock()), locs,
+                stats.getModifiedTime(block.getBlock()), true, isParity));
           } else {
             //TODO:// if no blocks in DNs, then modified time is Long.MAX and path is ""
-            pq.offer(new BlockWithStats(block.getBlock(),
-                new Stats(stats.getModifiedTime(block.getBlock()),
-                    stats.getBlockWithPath(block.getBlock()), false, locs)));
+            pq.offer(new Block(block.getBlock(),
+                stats.getBlockWithPath(block.getBlock()), locs,
+                stats.getModifiedTime(block.getBlock()), false, isParity));
           }
         }
         if (allZeroBlks.size() > 0) { // Found all zero blocks
@@ -277,37 +281,37 @@ public class ECCorruptFilesAnalyzer {
 
           //remove all blocks created prior to firstAllZeroBlock created
           while (!pq.isEmpty()) {
-            BlockWithStats peek = pq.peek();
-            if (peek.getTime() < firstZeroBlkTime) {
+            Block peek = pq.peek();
+            if (peek.getTimeStamp() < firstZeroBlkTime) {
               pq.remove();
             } else {
               break;
             }
           }
           bgCorruptBlks.add(
-              new BlockGrpCorruptedBlocks(Lists.newArrayList(pq.iterator()),
-                  BlockGrpCorruptedBlocks.Corruption_Type.ALL_ZEROS_WITH_ADDITIONAL_BLOCKS));
+              new BlockGroup(Lists.newArrayList(pq.iterator()),
+                  BlockGroup.Corruption_Type.ALL_ZEROS_WITH_ADDITIONAL_BLOCKS));
         } else { //No allZero blocks, but lets check the time variation between
           // blocks and file modification time.
           // If appends used, time variation could be high or it could go wrong.
-          List<BlockWithStats> possibleCorruptions = new ArrayList<>();
+          List<Block> possibleCorruptions = new ArrayList<>();
           while (!pq.isEmpty()) {
-            BlockWithStats nextCreatedBlk = pq.remove();
+            Block nextCreatedBlk = pq.remove();
             if (Math.abs(
-                nextCreatedBlk.stats.time - inodeModificationTime) > expected_time_gap_between_inode_and_blocks) {
+                nextCreatedBlk.timeStamp - inodeModificationTime) > expected_time_gap_between_inode_and_blocks) {
               possibleCorruptions.add(nextCreatedBlk);
             }
           }
 
           if (possibleCorruptions.size() > 0) {
-            bgCorruptBlks.add(new BlockGrpCorruptedBlocks(possibleCorruptions,
-                BlockGrpCorruptedBlocks.Corruption_Type.MORE_VARIED_TIME_STAMPS));
+            bgCorruptBlks.add(new BlockGroup(possibleCorruptions,
+                BlockGroup.Corruption_Type.MORE_VARIED_TIME_STAMPS));
           }
         }
       }
 
       if (bgCorruptBlks.size() > 0) {
-        results.addToResult(fullPath, bgCorruptBlks, ecPolicy.getName());
+        results.addToResult(fullPath,totalBlockGrpNum, bgCorruptBlks, ecPolicy.getName());
       }
     }
   }
@@ -316,8 +320,14 @@ public class ECCorruptFilesAnalyzer {
     return StripedBlockUtil.getBlockIndex(block.getLocalBlock()) >= i;
   }
 
-  public Map<String, List<BlockGrpCorruptedBlocks>> getResults(){
+  public Map<String, List<BlockGroup>> getResults(){
     return this.results.results;
+  }
+
+  public void stop() throws IOException, InterruptedException {
+    if(this.results!=null) {
+      this.results.stopProcessorGracefully();
+    }
   }
 
   /**
@@ -417,7 +427,7 @@ public class ECCorruptFilesAnalyzer {
 
       String bpID = "BP-" + split3[0];
 
-      return new ExtendedBlock(bpID, Block.filename2id(blockFileStr));
+      return new ExtendedBlock(bpID, org.apache.hadoop.hdfs.protocol.Block.filename2id(blockFileStr));
     }
 
     private long convert(String timeStr) {
@@ -452,41 +462,6 @@ public class ECCorruptFilesAnalyzer {
     }
   }
 
-  static class BlockWithStats {
-    private ExtendedBlock block;
-    private Stats stats;
-
-    public BlockWithStats(ExtendedBlock block, Stats stats) {
-      this.block = block;
-      this.stats = stats;
-    }
-
-    public Long getTime() {
-      return stats.time;
-    }
-
-    public void setStats(Stats stats) {
-      this.stats = stats;
-    }
-
-    public void setBlock(ExtendedBlock block) {
-      this.block = block;
-    }
-
-    public ExtendedBlock getBlock() {
-      return this.block;
-    }
-
-    public boolean isAllZerosBlock() {
-      return stats.isAllZeros;
-    }
-
-    @Override
-    public String toString() {
-      return "BlockWithStats{" + "block=" + block + ", stats=" + stats + '}';
-    }
-  }
-
   static class Stats {
     private final String[] locations;
     long time;
@@ -499,18 +474,6 @@ public class ECCorruptFilesAnalyzer {
       this.path = path;
       this.isAllZeros = isAllZeros;
       this.locations = locations;
-    }
-
-    public void setAllZeros(boolean allZeros) {
-      isAllZeros = allZeros;
-    }
-
-    public void setPath(String path) {
-      this.path = path;
-    }
-
-    public void setTime(long time) {
-      this.time = time;
     }
 
     @Override
@@ -552,82 +515,76 @@ public class ECCorruptFilesAnalyzer {
       }
     }
 
-    private Map<String, List<BlockGrpCorruptedBlocks>> results =
+    private Map<String, List<BlockGroup>> results =
         new HashMap<>();
     private static volatile boolean running = false;
 
-    private Queue<CorruptFileBlockGroups> queue = new LinkedList<>();
-    private Map<String, List<String>> safeBlocksToRename = new HashMap<>();
+    private Queue<PossibleImpactedECFile> queue = new LinkedList<>();
+    private Map<String, List<String>> safeBlocksToRename = new ConcurrentHashMap<>();
 
-    public Map<String, List<BlockGrpCorruptedBlocks>> getAllResults() {
+    public Map<String, List<BlockGroup>> getAllResults() {
       return this.results;
     }
 
-    public void addToResult(String file, List<BlockGrpCorruptedBlocks> bgCorruptBlks, String policyName) {
-      queue.offer(new CorruptFileBlockGroups(file, bgCorruptBlks, policyName));
+    public void addToResult(String file, int blockGroupSize, List<BlockGroup> bgCorruptBlks, String policyName) {
+      queue.offer(new PossibleImpactedECFile(file,policyName,blockGroupSize, bgCorruptBlks));
     }
 
     @Override
     public void run() {
       running = true;
       while(running) {
-        CorruptFileBlockGroups fileBlkGrps = queue.poll();
+        PossibleImpactedECFile fileBlkGrps = queue.poll();
         if (fileBlkGrps != null) {
           if (this.outPutPath == null) {
-            // This is just in memory and testing.
+            // This is just in memory for testing.
             results
-                .put(fileBlkGrps.getFileName(), fileBlkGrps.corruptBlockGroups);
+                .put(fileBlkGrps.getFileName(), fileBlkGrps.blockGroups);
             continue;
           }
-          List<BlockGrpCorruptedBlocks> blockGrpCorruptedBlocks =
-              fileBlkGrps.getBlockGrpCorruptedBlocks();
+          List<BlockGroup> blockGrpCorruptedBlocks =
+              fileBlkGrps.getBlockGroups();
 
-          List<BlockGrpJson> consolidatedBlkGrpJson = new ArrayList<>();
-          List<BlockGrpJson> unrecoverableBlkGrpJson = new ArrayList<>();
+          List<BlockGroup> consolidatedBlkGrpJson = new ArrayList<>();
+          List<BlockGroup> unrecoverableBlkGrpJson = new ArrayList<>();
           for (int i = 0; i < blockGrpCorruptedBlocks.size(); i++) {
-            BlockGrpCorruptedBlocks blkGrp = blockGrpCorruptedBlocks.get(i);
+            BlockGroup blkGrp = blockGrpCorruptedBlocks.get(i);
             if (blkGrp.getBlocks().size() <= ecNameVsPolicy
-                .get(fileBlkGrps.getECPolicyName()).getNumParityUnits()) {
+                .get(fileBlkGrps.getPolicyName()).getNumParityUnits()) {
               System.out.println(
                   "Found recoverable block group in file:" + fileBlkGrps
                       .getFileName() + " impacted blks : " + blkGrp
                       .getBlocks());
-              for (BlockWithStats blk : blkGrp.getBlocks()) {
+              for (Block blk : blkGrp.getBlocks()) {
                 //In EC, do we get more than one locations returned?
                 List<String> paths = safeBlocksToRename
-                    .getOrDefault(blk.stats.locations[0], new ArrayList<>());
-                paths.add(blk.stats.path);
-                safeBlocksToRename.put(blk.stats.locations[0], paths);
+                    .getOrDefault(blk.locations[0], new ArrayList<>());
+                paths.add(blk.blockPath);
+                safeBlocksToRename.put(blk.locations[0], paths);
               }
             } else {
               //unrecoverable block groups detected.
-              List<BlockJson> unrecoverableBlksJson = new ArrayList<>();
-              for (BlockWithStats blk : blkGrp.getBlocks()) {
-                unrecoverableBlksJson.add(new BlockJson(blk.stats.path, blk.stats.time));
+              List<Block> unrecoverableBlksJson = new ArrayList<>();
+              for (Block blk : blkGrp.getBlocks()) {
+                unrecoverableBlksJson.add(new Block(blk.block, blk.getBlockPath(),blk. getLocations(), blk. getTimeStamp(), blk. getIsAllZeros(), blk.getIsParity()));
               }
-              consolidatedBlkGrpJson.add(new BlockGrpJson(unrecoverableBlksJson));
+              unrecoverableBlkGrpJson.add(new BlockGroup(unrecoverableBlksJson, blkGrp.type));
 
             }
 
             //consolidated
-            List<BlockJson> consolBlksJson = new ArrayList<>();
-            for (BlockWithStats blk : blkGrp.getBlocks()) {
-              consolBlksJson.add(new BlockJson(blk.stats.path, blk.stats.time));
+            List<Block> consolBlksJson = new ArrayList<>();
+            for (Block blk : blkGrp.getBlocks()) {
+              consolBlksJson.add(new Block(blk.block, blk.getBlockPath(),blk.getLocations(), blk. getTimeStamp(), blk.getIsAllZeros(), blk.getIsParity()));
             }
-            consolidatedBlkGrpJson.add(new BlockGrpJson(consolBlksJson));
+            consolidatedBlkGrpJson.add(new BlockGroup(consolBlksJson, blkGrp.type));
           }
-
-          long totalBlockGrpNum =
-              ecNameVsPolicy.get(fileBlkGrps.getECPolicyName())
-                  .getNumParityUnits() + ecNameVsPolicy
-                  .get(fileBlkGrps.getECPolicyName()).getNumDataUnits();
 
           if (unrecoverableBlkGrpJson.size() > 0) {
             try {
               bwForUnrecoverableBlkGrpResultPath.write(
                   MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(
-                      new ECFileJson(fileBlkGrps.file, totalBlockGrpNum,
-                          unrecoverableBlkGrpJson)));
+                      new PossibleImpactedECFile(fileBlkGrps.getFileName(),fileBlkGrps.getPolicyName(), fileBlkGrps.getBlockGroupSize(), unrecoverableBlkGrpJson)));
               bwForUnrecoverableBlkGrpResultPath.newLine();
               bwForUnrecoverableBlkGrpResultPath.flush();
             } catch (IOException e) {
@@ -639,8 +596,8 @@ public class ECCorruptFilesAnalyzer {
           try {
             bwForConsolidatedResultPath.write(
                 MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(
-                    new ECFileJson(fileBlkGrps.file, totalBlockGrpNum,
-                        consolidatedBlkGrpJson)));
+                    new PossibleImpactedECFile(fileBlkGrps.getFileName(),
+                        fileBlkGrps.getPolicyName(), fileBlkGrps.getBlockGroupSize(),  consolidatedBlkGrpJson)));
             bwForConsolidatedResultPath.newLine();
             bwForConsolidatedResultPath.flush();
           } catch (IOException e) {
@@ -675,8 +632,8 @@ public class ECCorruptFilesAnalyzer {
         if(paths.size()>flushNum){ //make it configurable
           //Let's flush
           if(fs!=null && safeBlksToRenamePath !=null){
-            Path filePath = new Path(
-                safeBlksToRenamePath, next.getKey().replace(":","@"));
+            Path filePath = new Path(safeBlksToRenamePath,
+                next.getKey().replace(":", "@") + ".txt");
             try {
               try (FSDataOutputStream fos = fs.exists(filePath) ?
                   fs.append(filePath) :
@@ -726,53 +683,7 @@ public class ECCorruptFilesAnalyzer {
     }
   }
 
-  static class CorruptFileBlockGroups{
-     private String file;
-     private String ecPolicyName;
-     private List<BlockGrpCorruptedBlocks> corruptBlockGroups;
 
-     public CorruptFileBlockGroups(String file, List<BlockGrpCorruptedBlocks> corruptBlockGroups, String ecPolicyName){
-       this.file = file;
-       this.corruptBlockGroups = corruptBlockGroups;
-       this.ecPolicyName = ecPolicyName;
-     }
-
-     public String getFileName(){
-       return this.file;
-     }
-
-    public String getECPolicyName(){
-      return this.ecPolicyName;
-    }
-
-    public List<BlockGrpCorruptedBlocks> getBlockGrpCorruptedBlocks(){
-      return this.corruptBlockGroups;
-    }
-  }
-
-  static class BlockGrpCorruptedBlocks {
-    static enum Corruption_Type {
-      ALL_ZEROS_WITH_ADDITIONAL_BLOCKS, MORE_VARIED_TIME_STAMPS;
-    }
-
-    private List<BlockWithStats> blkWithTimeStamp;
-    private Corruption_Type type;
-
-    public BlockGrpCorruptedBlocks(List<BlockWithStats> blkWithTimeStamp,
-        Corruption_Type type) {
-      this.blkWithTimeStamp = blkWithTimeStamp;
-      this.type = type;
-    }
-
-    public List<BlockWithStats> getBlocks() {
-      return this.blkWithTimeStamp;
-    }
-
-    @Override
-    public String toString() {
-      return "BlockGrpCorruptedBlocks{" + "blkWithTimeStamp=" + blkWithTimeStamp + ", type=" + type + '}';
-    }
-  }
 
   /**
    * @return true if the given path is a snapshot path and the corresponding
@@ -807,65 +718,101 @@ public class ECCorruptFilesAnalyzer {
     return sb.toString();
   }
 
-  static class BlockJson{
-    private String blkPath;
-    private long time;
+  static class Block {
+    private ExtendedBlock block;
+    private String blockPath;
+    private String[] locations;
+    private long timeStamp;
+    private boolean isAllZeros;
+    private boolean isParity;
 
-    public BlockJson(String blkPath, long time){
-      this.blkPath = blkPath;
-      this.time = time;
+    public Block(ExtendedBlock block, String blkPath, String[] locations,
+        long time, boolean isAllZeros, boolean isParity) {
+      this.block = block;
+      this.blockPath = blkPath;
+      this.locations = locations;
+      this.timeStamp = time;
+      this.isAllZeros = isAllZeros;
+      this.isParity = isParity;
     }
 
-    public void setTime(long time) {
-      this.time = time;
+    public void setBlockPath(String blockPath) {
+      this.blockPath = blockPath;
     }
 
-    public long getTime() {
-      return time;
+    public String getBlockPath() {
+      return blockPath;
     }
 
-    public void setBlkPath(String blkPath) {
-      this.blkPath = blkPath;
+    public void setTimeStamp(long time) {
+      this.timeStamp = time;
     }
 
-    public String getBlkPath() {
-      return blkPath;
+    public Long getTimeStamp() {
+      return timeStamp;
+    }
+
+    public void setLocations(String[] locations) {
+      this.locations = locations;
+    }
+
+    public String[] getLocations() {
+      return locations;
+    }
+
+    public void setIsAllZeros(boolean allZeros) {
+      isAllZeros = allZeros;
+    }
+
+    public boolean getIsAllZeros() {
+      return isAllZeros;
+    }
+
+    public void setIsParity(boolean parity) {
+      isParity = parity;
+    }
+
+    public boolean getIsParity(){
+      return isParity;
+    }
+
+  }
+
+  static class BlockGroup {
+    static enum Corruption_Type {
+      ALL_ZEROS_WITH_ADDITIONAL_BLOCKS, MORE_VARIED_TIME_STAMPS;
+    }
+
+    private BlockGroup.Corruption_Type type;
+    private List<Block> blocks;
+
+    public BlockGroup(List<Block> blocks,
+        BlockGroup.Corruption_Type type) {
+      this.blocks = blocks;
+      this.type = type;
+    }
+
+    public void setBlocks(List<Block> blocks) {
+      this.blocks = blocks;
+    }
+
+    public List<Block> getBlocks() {
+      return blocks;
     }
   }
 
-  static class BlockGrpJson{
-    private List<BlockJson> blockJson;
-    public BlockGrpJson(List<BlockJson> blockJson){
-      this.blockJson = blockJson;
-    }
+  static class PossibleImpactedECFile {
+    private String fileName;
+    private String policyName;
+    private int blockGroupSize;
+    private List<BlockGroup> blockGroups;
 
-    public void setBlockJson(List<BlockJson> blockJson) {
-      this.blockJson = blockJson;
-    }
-
-    public List<BlockJson> getBlockJson() {
-      return blockJson;
-    }
-  }
-
-  static class ECFileJson {
-    String fileName;
-    private long blockGroupSize;
-    private List<BlockGrpJson> blkGrp;
-
-    public ECFileJson(String fileName, long blockGroupSize, List<BlockGrpJson> blkGrp){
+    public PossibleImpactedECFile(String fileName, String ecPolicyName, int blockGroupSize,
+        List<BlockGroup> blkGrps) {
       this.fileName = fileName;
+      this.policyName = ecPolicyName;
       this.blockGroupSize = blockGroupSize;
-      this.blkGrp = blkGrp;
-    }
-
-
-    public long getBlockGroupSize() {
-      return blockGroupSize;
-    }
-
-    public void setBlockGroupSize(long blockGroupSize) {
-      this.blockGroupSize = blockGroupSize;
+      this.blockGroups = blkGrps;
     }
 
     public void setFileName(String fileName) {
@@ -876,15 +823,29 @@ public class ECCorruptFilesAnalyzer {
       return fileName;
     }
 
-    public void setBlkGrp(List<BlockGrpJson> blkGrp) {
-      this.blkGrp = blkGrp;
+    public int getBlockGroupSize() {
+      return blockGroupSize;
     }
-    public List<BlockGrpJson> getBlkGrp() {
-      return blkGrp;
+
+    public void setBlockGroupSize(int blockGroupSize) {
+      this.blockGroupSize = blockGroupSize;
+    }
+
+    public void setPolicyName(String policyName) {
+      this.policyName = policyName;
+    }
+
+    public String getPolicyName() {
+      return policyName;
+    }
+
+    public void setBlockGroups(List<BlockGroup> blockGroups) {
+      this.blockGroups = blockGroups;
+    }
+
+    public List<BlockGroup> getBlockGroups() {
+      return blockGroups;
     }
   }
-
-
-
 }
 

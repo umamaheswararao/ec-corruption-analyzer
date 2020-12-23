@@ -15,7 +15,7 @@ rm -rf $TMP_ALL_BLK_PATHS_WITH_TIMESTAMP_RESULT
 findBlkTimeStampAndAllZeroBlocksInDir(){
   echo "Scanning dir:" $1
 
-  for blockPath in $(find $1 -type f -iname "*blk_*" | awk '!/.meta/{print }' | awk '/BP-/{print}')
+  for blockPath in $(find $1 -type f -iname "*blk_-*" | awk '!/.meta/{print }' | awk '/BP-/{print}')
   do
       #echo The block path is $blockPath
       BLK_PATH_WITH_TIME_STAMP=$(stat -c '%.9Y %n' $blockPath)
