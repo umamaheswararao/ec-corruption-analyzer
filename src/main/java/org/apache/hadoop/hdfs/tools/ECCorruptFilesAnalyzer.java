@@ -81,6 +81,8 @@ public class ECCorruptFilesAnalyzer {
   static String BLOCK_TIME_STAMPS_FOLDER = "blocktimestamps";
   private static long expected_time_gap_between_inode_and_blocks =
       EXPECTED_TIME_GAP_BETWEEN_FILE_AND_BLOCKS;
+  private static boolean CHECK_ALL_ZEROS_DEFAULT = true;
+  private static boolean checkAllZeros = CHECK_ALL_ZEROS_DEFAULT;
   private static Map<String, ErasureCodingPolicy> ecNameVsPolicy = new HashMap<>();
   private ResultsProcessor results;
 
@@ -95,7 +97,7 @@ public class ECCorruptFilesAnalyzer {
    * Main method to start validating service service.
    */
   public static void main(String[] args) throws Exception {
-    if (args.length < 2) {
+    if (args.length < 3) {
       System.err.println(
           "Not sufficient arguments provided. Expected parameters are \n" +
               " 1. statsPath - where scripts/EC_Blks_TimeStamp_And_AllZeroBlks_Finder.sh generated outputs,\n" +
@@ -112,7 +114,8 @@ public class ECCorruptFilesAnalyzer {
 
     Path outPath = args.length > 2 ? new Path(args[2]) : null;
     HdfsConfiguration conf = new HdfsConfiguration();
-
+    checkAllZeros = conf.getBoolean("ec.analyzer.check.all.zero.blocks",
+        CHECK_ALL_ZEROS_DEFAULT);
     //For now just use balancer key tab
     secureLogin(conf);
     ECCorruptFilesAnalyzer analyzer = new ECCorruptFilesAnalyzer();
@@ -258,15 +261,18 @@ public class ECCorruptFilesAnalyzer {
             allZeroBlks.add(block);
             pq.offer(new Block(block.getBlock(),
                 stats.getBlockWithPath(block.getBlock()), locs,
-                stats.getModifiedTime(block.getBlock()), true, isParity));
+                stats.getModifiedTime(block.getBlock()), true, isParity, false));
           } else {
             //TODO:// if no blocks in DNs, then modified time is Long.MAX and path is ""
+            Long modifiedTime = stats.getModifiedTime(block.getBlock());
+            String blockWithPath = stats.getBlockWithPath(block.getBlock());
+            boolean isMissingBlock = "".equals(blockWithPath) && modifiedTime == Long.MAX_VALUE;
             pq.offer(new Block(block.getBlock(),
-                stats.getBlockWithPath(block.getBlock()), locs,
-                stats.getModifiedTime(block.getBlock()), false, isParity));
+                blockWithPath, locs,
+                modifiedTime, false, isParity, isMissingBlock));
           }
         }
-        if (allZeroBlks.size() > 0) { // Found all zero blocks
+        if (allZeroBlks.size() > 0 && checkAllZeros) { // Found all zero blocks
           //Find first created zero block
           LocatedBlock firstAllZeroBlk = allZeroBlks.get(0);
           long firstZeroBlkTime =
@@ -566,7 +572,7 @@ public class ECCorruptFilesAnalyzer {
               //unrecoverable block groups detected.
               List<Block> unrecoverableBlksJson = new ArrayList<>();
               for (Block blk : blkGrp.getBlocks()) {
-                unrecoverableBlksJson.add(new Block(blk.block, blk.getBlockPath(),blk. getLocations(), blk. getTimeStamp(), blk. getIsAllZeros(), blk.getIsParity()));
+                unrecoverableBlksJson.add(new Block(blk.block, blk.getBlockPath(),blk. getLocations(), blk. getTimeStamp(), blk. getIsAllZeros(), blk.getIsParity(), blk.isMissingBlock));
               }
               unrecoverableBlkGrpJson.add(new BlockGroup(unrecoverableBlksJson, blkGrp.type));
 
@@ -575,7 +581,7 @@ public class ECCorruptFilesAnalyzer {
             //consolidated
             List<Block> consolBlksJson = new ArrayList<>();
             for (Block blk : blkGrp.getBlocks()) {
-              consolBlksJson.add(new Block(blk.block, blk.getBlockPath(),blk.getLocations(), blk. getTimeStamp(), blk.getIsAllZeros(), blk.getIsParity()));
+              consolBlksJson.add(new Block(blk.block, blk.getBlockPath(),blk.getLocations(), blk. getTimeStamp(), blk.getIsAllZeros(), blk.getIsParity(), blk.isMissingBlock));
             }
             consolidatedBlkGrpJson.add(new BlockGroup(consolBlksJson, blkGrp.type));
           }
@@ -725,15 +731,17 @@ public class ECCorruptFilesAnalyzer {
     private long timeStamp;
     private boolean isAllZeros;
     private boolean isParity;
+    private boolean isMissingBlock;
 
     public Block(ExtendedBlock block, String blkPath, String[] locations,
-        long time, boolean isAllZeros, boolean isParity) {
+        long time, boolean isAllZeros, boolean isParity, boolean isMissingBlock) {
       this.block = block;
       this.blockPath = blkPath;
       this.locations = locations;
       this.timeStamp = time;
       this.isAllZeros = isAllZeros;
       this.isParity = isParity;
+      this.isMissingBlock = isMissingBlock;
     }
 
     public void setBlockPath(String blockPath) {
@@ -774,6 +782,14 @@ public class ECCorruptFilesAnalyzer {
 
     public boolean getIsParity(){
       return isParity;
+    }
+
+    public void setIsMissingBlock(boolean isMissingBlk){
+      isMissingBlock = isMissingBlk;
+    }
+
+    public boolean getIsMissingBlock(){
+      return isMissingBlock;
     }
 
   }

@@ -17,17 +17,20 @@
  */
 package org.apache.hadoop.hdfs.tools;
 
+import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
-import java.net.URISyntaxException;
 import java.nio.file.attribute.FileTime;
 import java.util.ArrayList;
 import java.util.List;
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FSDataOutputStream;
+import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hdfs.DFSConfigKeys;
 import org.apache.hadoop.hdfs.DFSTestUtil;
@@ -46,6 +49,11 @@ import org.apache.hadoop.hdfs.protocol.LocatedBlocks;
 import org.apache.hadoop.hdfs.protocol.LocatedStripedBlock;
 import org.apache.hadoop.hdfs.util.StripedBlockUtil;
 import org.apache.hadoop.security.UserGroupInformation;
+import org.codehaus.jackson.JsonFactory;
+import org.codehaus.jackson.JsonNode;
+import org.codehaus.jackson.JsonParser;
+import org.codehaus.jackson.JsonToken;
+import org.codehaus.jackson.map.MappingJsonFactory;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -54,7 +62,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.file.Files;
-import java.util.Map;
 
 /**
  * This class tests the parsing of DN block stats and building the EC analysis
@@ -126,9 +133,8 @@ public class TestECCorruptionAnalyzer {
     int writeBytes = cellSize * dataBlocks;
     writeStripedFile(dfs, ecFile, writeBytes);
     generateStatsFiles(busyNodes, ecFile, 5 * 60 * 1000 + 1);
-    Map<String, List<ECCorruptFilesAnalyzer.BlockGroup>>
-        stringListMap = analyzeECCorruption();
-    Assert.assertEquals(1, stringListMap.size());
+    List<String> files = analyzeECCorruption();
+    Assert.assertEquals(1, files.size());
   }
 
   @Test(timeout = 300000)
@@ -160,10 +166,8 @@ public class TestECCorruptionAnalyzer {
     //Simulating to generate block statistics from all DNs for a given file blocks
     generateStatsFiles(corruptBlockIndices, ecUnrecoverableFile1,  5 * 60 * 1000 + 1);
 
-
-    Map<String, List<ECCorruptFilesAnalyzer.BlockGroup>> corruptedBlockGrps =
-        analyzeECCorruption();
-    Assert.assertEquals(3, corruptedBlockGrps.size());
+    List<String> corruptedFiles = analyzeECCorruption();
+    Assert.assertEquals(3, corruptedFiles.size());
   }
 
   private void writeECFile(Path ecFile, int writeBytes) throws IOException {
@@ -234,14 +238,36 @@ public class TestECCorruptionAnalyzer {
     }
   }
 
-  private Map<String, List<ECCorruptFilesAnalyzer.BlockGroup>> analyzeECCorruption()
-      throws IOException, URISyntaxException, InterruptedException {
+  private List<String> analyzeECCorruption()
+      throws Exception {
     Path[] paths = new Path[] {new Path("/")};
     ECCorruptFilesAnalyzer analyzer = new ECCorruptFilesAnalyzer();
-    //Path out = new Path("file:///Users/umagangumalla/Work/repos/PRs/Todelete/ec-corruption-analyzer/test/testOut");
-    analyzer.analyze(statsDirPath, paths, null, conf);
+    Path out = new Path("/scanning");
+    analyzer.analyze(statsDirPath, paths, out, conf);
     analyzer.stop();
-    return analyzer.getResults();
+    List<String> files = getImpactedFiles(new Path(out, "ConsolidatedResult"));
+    return files;
+  }
+
+  private List<String> getImpactedFiles(Path out) throws Exception {
+    FileSystem fs = out.getFileSystem(conf);
+    List<String> files = new ArrayList<>();
+    JsonFactory jf = new MappingJsonFactory();
+    try (FSDataInputStream open = fs.open(out)) {
+      BufferedReader reader = new BufferedReader(new InputStreamReader(open));
+      JsonParser parser = jf.createJsonParser(reader);
+      JsonToken current;
+      current = parser.nextToken();
+      if (current != JsonToken.START_OBJECT) {
+        System.out.println("Quiting...root should be obj");
+      }
+      while (current != null && current != JsonToken.END_OBJECT) {
+        JsonNode jn = parser.readValueAsTree();
+        files.add(jn.get("fileName").getTextValue());
+        current = parser.nextToken();
+      }
+    }
+    return files;
   }
 
   private byte[] writeStripedFile(DistributedFileSystem fs, Path ecFile,
