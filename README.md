@@ -41,4 +41,44 @@ Now run the following command:
   
 Here output can be local file system path as well. If you want to store in local file system, please make sure to give the output path prefixed with scheme. Ec: file://user/ec-analysis
 
+The output folder contains 3 category of results. 
+In the output directory:
+1. ConsolidatedResult contains the all impacted files with the impacted specific block group information.
+   
+   example content:
+   
+   {
+  "fileName" : "/TestECCorruptionAnalyzer/ECCorruptFileAnalyzer-recoverable",
+  "policyName" : "RS-6-3-1024k",
+  "blockGroupSize" : 9,
+  "blockGroups" : [ {
+    "blocks" : [ {
+      "blockPath" : "/Users/umagangumalla/Work/repos/PRs/ec-corruption-analyzer/target/test/data/dfs/data/data23/current/BP-485120788-127.0.0.1-1609834596216/current/finalized/subdir0/subdir0/blk_-9223372036854775791",
+      "locations" : [ "127.0.0.1:52620" ],
+      "timeStamp" : 1609834903742,
+      "isAllZeros" : false,
+      "isParity" : false,
+      "isMissingBlock" : false
+    }, {
+      "blockPath" : "/Users/umagangumalla/Work/repos/PRs/ec-corruption-analyzer/target/test/data/dfs/data/data11/current/BP-485120788-127.0.0.1-1609834596216/current/finalized/subdir0/subdir0/blk_-9223372036854775770",
+      "locations" : [ "127.0.0.1:52578" ],
+      "timeStamp" : 1609834904049,
+      "isAllZeros" : true,
+      "isParity" : true,
+      "isMissingBlock" : false
+    } ]
+  } ]
+}
+
+2. UnrecoverableBlkGrpResult: this file contains the details of files which needs further attentions in recovery process as potential impacted files are more than or equal to parity.
+
+3. RecoverableBlockGrpBlockPaths: this file contains sevaral files with block paths. If the blockGroup impacted blocks are less than or equal to parity, then we can safely move out the blocks from datanode directories. So, that HDFS will reconstruct them back with good data. Each file names with datanode IP@Port.txt format. Using rename_blks_with_locations.sh, can can move the blocks out from datanode directories.
+
+Example file block content:
+cat RecoverableBlockGrpBlockPaths/127.0.0.1@52022.txt
+/Users/umagangumalla/Work/repos/PRs/ec-corruption-analyzer/target/test/data/dfs/data/data1/current/BP-2058363885-127.0.0.1-1609834454572/current/finalized/subdir0/subdir0/blk_-9223372036854775791
+/Users/umagangumalla/Work/repos/PRs/ec-corruption-analyzer/target/test/data/dfs/data/data2/current/BP-2058363885-127.0.0.1-1609834454572/current/finalized/subdir0/subdir0/blk_-9223372036854775759
+
+
+
 
