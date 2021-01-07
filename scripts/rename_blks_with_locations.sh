@@ -1,8 +1,8 @@
-input_file=`hostname -s`
+input_file=`hostname -i`
 is_run=$1
 timestring=`date +"%m-%d-%Y-%H-%M-%S-%s"`
-stdout=stdout_`hostname -s`_inode_repair_p1_$timestring
-stderr=stderr_`hostname -s`_inode_repair_p1_$timestring
+stdout=stdout_`hostname -s`_`hostname -i`_inode_repair_p1_$timestring
+stderr=stderr_`hostname -s`_`hostname -i`_inode_repair_p1_$timestring
 while IFS= read -r line
 do
   	echo "processing block file $line"
