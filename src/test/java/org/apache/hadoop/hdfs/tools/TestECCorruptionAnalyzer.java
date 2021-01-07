@@ -68,12 +68,6 @@ import java.nio.file.Files;
  * report.
  */
 public class TestECCorruptionAnalyzer {
-  private static final Logger LOG =
-      LoggerFactory.getLogger(TestECCorruptionAnalyzer.class);
-
-  // heartbeat interval in seconds
-  private static final int HEARTBEAT_INTERVAL = 3;
-
   private Configuration conf;
   private MiniDFSCluster cluster;
   private DistributedFileSystem dfs;
@@ -103,6 +97,10 @@ public class TestECCorruptionAnalyzer {
     conf.set("dfs.block.local-path-access.user", UserGroupInformation.getCurrentUser().getUserName());
     conf.setLong(DFSConfigKeys.DFS_BLOCK_SIZE_KEY, blockSize);
     numDNs = dataBlocks + parityBlocks + 6;
+    init(numDNs);
+  }
+
+  private void init(int numDNs) throws IOException {
     cluster = new MiniDFSCluster.Builder(conf).numDataNodes(numDNs).build();
     cluster.waitActive();
     dfs = cluster.getFileSystem(0);
@@ -170,6 +168,22 @@ public class TestECCorruptionAnalyzer {
     Assert.assertEquals(3, corruptedFiles.size());
   }
 
+  @Test(timeout = 30000)
+  public void testECCorruptFileAnalyzerWithBlockGroupsWhenOnlyDatablockNumDNsHaveBlocks()
+      throws Exception {
+    cluster.shutdown();
+    init(dataBlocks);
+    List<Byte> busyNodes = new ArrayList<>();
+    busyNodes.add((byte) 5);
+    //1. create EC file
+    final Path ecFile = new Path(ecDir, "ECCorruptFileAnalyzer");
+    int writeBytes = cellSize * dataBlocks;
+    writeECFile(ecFile, writeBytes);
+    generateStatsFiles(busyNodes, ecFile, 5 * 60 * 1000 + 1);
+    List<String> files = analyzeECCorruption();
+    Assert.assertEquals(1, files.size());
+  }
+
   private void writeECFile(Path ecFile, int writeBytes) throws IOException {
     try (FSDataOutputStream fos = dfs.create(ecFile)) {
       BufferedWriter br = new BufferedWriter(new OutputStreamWriter(fos));
@@ -193,6 +207,7 @@ public class TestECCorruptionAnalyzer {
           cellSize, dataBlocks, parityBlocks);
       long timeNow = System.currentTimeMillis();
       for (int i = 0; i < dataBlocks + parityBlocks; i++) {
+        if(lbs[i] == null) continue;
         java.nio.file.Path path = new File(
             cluster.getDataNode(lbs[i].getLocations()[0].getIpcPort())
                 .getBlockLocalPathInfo(lbs[i].getBlock(),

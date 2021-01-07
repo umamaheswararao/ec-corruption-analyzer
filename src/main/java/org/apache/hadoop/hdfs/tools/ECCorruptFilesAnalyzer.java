@@ -247,12 +247,18 @@ public class ECCorruptFilesAnalyzer {
                 return o1.getTimeStamp().compareTo(o2.getTimeStamp());
               }
             });
-
-        for (LocatedBlock block : blocks) {
+        for (int i=0; i< blocks.length; i++) {
+          LocatedBlock block = blocks[i];
+          if (block == null) {
+            System.out.println(
+                "Block location is not reported to NN by any DN. So, ignoring this block from analysis. The block is:" + new org.apache.hadoop.hdfs.protocol.Block(
+                    firstBlock.getBlock()
+                        .getBlockId() + i) + " and the file name is: " + fullPath);
+            continue;
+          }
           String[] locs =
               Arrays.stream(block.getLocations()).map(datanodeInfo -> {
-                return datanodeInfo.getIpAddr() + ":" + datanodeInfo
-                    .getIpcPort();
+                return datanodeInfo.getIpAddr();
               }).toArray(String[]::new);
           boolean isParity = isParityBlock(
               block.getBlock(), dataBlkNum);
@@ -448,8 +454,8 @@ public class ECCorruptFilesAnalyzer {
 
       long secsInMillis = TimeUnit.MILLISECONDS
           .convert(Long.valueOf(split[0]), TimeUnit.SECONDS);
-      long miilisTime = Long.valueOf(split[1]);
-      long timeStampInMillis = secsInMillis + miilisTime;
+      //Ignoring millis part split[1] for now as expected time gap is fairly larger than this.
+      long timeStampInMillis = secsInMillis;
       return timeStampInMillis;
     }
 
@@ -638,8 +644,7 @@ public class ECCorruptFilesAnalyzer {
         if(paths.size()>flushNum){ //make it configurable
           //Let's flush
           if(fs!=null && safeBlksToRenamePath !=null){
-            Path filePath = new Path(safeBlksToRenamePath,
-                next.getKey().replace(":", "@") + ".txt");
+            Path filePath = new Path(safeBlksToRenamePath, next.getKey());
             try {
               try (FSDataOutputStream fos = fs.exists(filePath) ?
                   fs.append(filePath) :
