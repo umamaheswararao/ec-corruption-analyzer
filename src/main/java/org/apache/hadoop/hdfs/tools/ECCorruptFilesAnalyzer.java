@@ -84,6 +84,8 @@ public class ECCorruptFilesAnalyzer {
       EXPECTED_TIME_GAP_BETWEEN_FILE_AND_BLOCKS;
   private static long expected_time_gap_between_oldest_blk_and_other_blks =
       EXPECTED_TIME_GAP_BETWEEN_OLDEST_BLK_AND_OTHER_BLOCKS;
+  private static boolean NEED_SECURE_LOGIN = false;
+  private static boolean needSecureLogin = false;
   private static boolean CHECK_AGAINST_INODE_TIME = false;
   private static boolean checkAgainstInodeTime = CHECK_AGAINST_INODE_TIME;
   private static boolean CHECK_ALL_ZEROS_DEFAULT = true;
@@ -110,6 +112,7 @@ public class ECCorruptFilesAnalyzer {
               " 3. Output directory path.");
       return;
     }
+
     Path ecBlockStatsPath = new Path(args[0]);
     String split[] = args[1].split(",");
     Path targetPaths[] = new Path[split.length];
@@ -119,17 +122,10 @@ public class ECCorruptFilesAnalyzer {
 
     Path outPath = args.length > 2 ? new Path(args[2]) : null;
     HdfsConfiguration conf = new HdfsConfiguration();
+    needSecureLogin =
+        conf.getBoolean("ec.analyzer.need.secure.login", NEED_SECURE_LOGIN);
     checkAllZeros = conf.getBoolean("ec.analyzer.check.all.zero.blocks",
         CHECK_ALL_ZEROS_DEFAULT);
-    //For now just use balancer key tab
-    secureLogin(conf);
-    ECCorruptFilesAnalyzer analyzer = new ECCorruptFilesAnalyzer();
-    analyzer.analyze(ecBlockStatsPath, targetPaths, outPath, conf);
-  }
-
-  public void analyze(Path ecBlockStatsPath, Path[] targetPaths, Path outPath,
-      Configuration conf)
-      throws IOException, URISyntaxException, InterruptedException {
     expected_time_gap_between_inode_and_blocks =
         conf.getLong("ec.analyzer.expected.time.gap.between.file.and.blks",
             EXPECTED_TIME_GAP_BETWEEN_FILE_AND_BLOCKS);
@@ -137,6 +133,17 @@ public class ECCorruptFilesAnalyzer {
         conf.getLong("ec.analyzer.expected.time.gap.between.oldest.blk.and.other.blks",
             EXPECTED_TIME_GAP_BETWEEN_OLDEST_BLK_AND_OTHER_BLOCKS);
     checkAgainstInodeTime = conf.getBoolean("ec.analyzer.check.against.inode.time", CHECK_AGAINST_INODE_TIME);
+    //For now just use balancer key tab
+    if (needSecureLogin) {
+      secureLogin(conf);
+    }
+    ECCorruptFilesAnalyzer analyzer = new ECCorruptFilesAnalyzer();
+    analyzer.analyze(ecBlockStatsPath, targetPaths, outPath, conf);
+  }
+
+  public void analyze(Path ecBlockStatsPath, Path[] targetPaths, Path outPath,
+      Configuration conf)
+      throws IOException, URISyntaxException, InterruptedException {
     DistributedFileSystem dfs = new DistributedFileSystem();
     results = new ResultsProcessor(outPath, conf);
     try {
