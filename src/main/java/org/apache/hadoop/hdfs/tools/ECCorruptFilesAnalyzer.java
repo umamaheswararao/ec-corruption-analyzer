@@ -77,10 +77,15 @@ public class ECCorruptFilesAnalyzer {
   private static final ObjectMapper MAPPER = new ObjectMapper();
   private static ECBlockStatsProvider stats = new ECBlockStatsProvider();
   private static long EXPECTED_TIME_GAP_BETWEEN_FILE_AND_BLOCKS = 5 * 60 * 1000;
+  private static long EXPECTED_TIME_GAP_BETWEEN_OLDEST_BLK_AND_OTHER_BLOCKS = 5 * 1000;
   static String ALL_ZEROS_BLOCKS_FOLDER = "allzeroblocks";
   static String BLOCK_TIME_STAMPS_FOLDER = "blocktimestamps";
   private static long expected_time_gap_between_inode_and_blocks =
       EXPECTED_TIME_GAP_BETWEEN_FILE_AND_BLOCKS;
+  private static long expected_time_gap_between_oldest_blk_and_other_blks =
+      EXPECTED_TIME_GAP_BETWEEN_OLDEST_BLK_AND_OTHER_BLOCKS;
+  private static boolean CHECK_AGAINST_INODE_TIME = false;
+  private static boolean checkAgainstInodeTime = CHECK_AGAINST_INODE_TIME;
   private static boolean CHECK_ALL_ZEROS_DEFAULT = true;
   private static boolean checkAllZeros = CHECK_ALL_ZEROS_DEFAULT;
   private static Map<String, ErasureCodingPolicy> ecNameVsPolicy = new HashMap<>();
@@ -126,8 +131,12 @@ public class ECCorruptFilesAnalyzer {
       Configuration conf)
       throws IOException, URISyntaxException, InterruptedException {
     expected_time_gap_between_inode_and_blocks =
-        conf.getLong("ec.analyzer.expected.time.gap.between.file.and.blocks",
+        conf.getLong("ec.analyzer.expected.time.gap.between.file.and.blks",
             EXPECTED_TIME_GAP_BETWEEN_FILE_AND_BLOCKS);
+    expected_time_gap_between_oldest_blk_and_other_blks =
+        conf.getLong("ec.analyzer.expected.time.gap.between.oldest.blk.and.other.blks",
+            EXPECTED_TIME_GAP_BETWEEN_OLDEST_BLK_AND_OTHER_BLOCKS);
+    checkAgainstInodeTime = conf.getBoolean("ec.analyzer.check.against.inode.time", CHECK_AGAINST_INODE_TIME);
     DistributedFileSystem dfs = new DistributedFileSystem();
     results = new ResultsProcessor(outPath, conf);
     try {
@@ -247,6 +256,7 @@ public class ECCorruptFilesAnalyzer {
                 return o1.getTimeStamp().compareTo(o2.getTimeStamp());
               }
             });
+        long oldestBlockTime = Long.MAX_VALUE;
         for (int i=0; i< blocks.length; i++) {
           LocatedBlock block = blocks[i];
           if (block == null) {
@@ -262,21 +272,25 @@ public class ECCorruptFilesAnalyzer {
               }).toArray(String[]::new);
           boolean isParity = isParityBlock(
               block.getBlock(), dataBlkNum);
+          Long modifiedTime = stats.getModifiedTime(block.getBlock());
+          String blockWithPath = stats.getBlockWithPath(block.getBlock());
+
+          oldestBlockTime = Math.min(modifiedTime, oldestBlockTime);
           if (stats.allZeroBlockIds
               .contains(block.getBlock()) && isParity) { //Currently
             allZeroBlks.add(block);
-            pq.offer(new Block(block.getBlock(),
-                stats.getBlockWithPath(block.getBlock()), locs,
-                stats.getModifiedTime(block.getBlock()), true, isParity, false));
+            pq.offer(
+                new Block(block.getBlock(), blockWithPath, locs, modifiedTime,
+                    true, isParity, false));
           } else {
             //TODO:// if no blocks in DNs, then modified time is Long.MAX and path is ""
-            Long modifiedTime = stats.getModifiedTime(block.getBlock());
-            String blockWithPath = stats.getBlockWithPath(block.getBlock());
-            boolean isMissingBlock = "".equals(blockWithPath) && modifiedTime == Long.MAX_VALUE;
-            pq.offer(new Block(block.getBlock(),
-                blockWithPath, locs,
-                modifiedTime, false, isParity, isMissingBlock));
+            boolean isMissingBlock =
+                "".equals(blockWithPath) && modifiedTime == Long.MAX_VALUE;
+            pq.offer(
+                new Block(block.getBlock(), blockWithPath, locs, modifiedTime,
+                    false, isParity, isMissingBlock));
           }
+
         }
         if (allZeroBlks.size() > 0 && checkAllZeros) { // Found all zero blocks
           //Find first created zero block
@@ -309,8 +323,10 @@ public class ECCorruptFilesAnalyzer {
           List<Block> possibleCorruptions = new ArrayList<>();
           while (!pq.isEmpty()) {
             Block nextCreatedBlk = pq.remove();
-            if (Math.abs(
-                nextCreatedBlk.timeStamp - inodeModificationTime) > expected_time_gap_between_inode_and_blocks) {
+            if (checkAgainstInodeTime ?
+                checkWithInodeTime(inodeModificationTime,
+                    nextCreatedBlk.timeStamp) :
+                checkWithOldestBlk(oldestBlockTime, nextCreatedBlk.timeStamp)) {
               possibleCorruptions.add(nextCreatedBlk);
             }
           }
@@ -326,6 +342,18 @@ public class ECCorruptFilesAnalyzer {
         results.addToResult(fullPath,totalBlockGrpNum, bgCorruptBlks, ecPolicy.getName());
       }
     }
+  }
+
+  private static boolean checkWithInodeTime(long inodeModificationTime,
+      long currentBlkTime) {
+    return Math.abs(
+        currentBlkTime - inodeModificationTime) > expected_time_gap_between_inode_and_blocks;
+  }
+
+  private static boolean checkWithOldestBlk(long oldestBlkTime,
+      long currentBlkTime) {
+    return Math.abs(
+        currentBlkTime - oldestBlkTime) > expected_time_gap_between_oldest_blk_and_other_blks;
   }
 
   private static boolean isParityBlock(ExtendedBlock block, int i) {
