@@ -108,7 +108,7 @@ public class ECCorruptFilesAnalyzer {
       System.err.println(
           "Not sufficient arguments provided. Expected parameters are \n" +
               " 1. statsPath - where scripts/EC_Blks_TimeStamp_And_AllZeroBlks_Finder.sh generated outputs,\n" +
-              " 2. list of target Paths to scan for EC files. \n" +
+              " 2. list of target paths to scan for EC files. \n" +
               " 3. Output directory path.");
       return;
     }
@@ -133,6 +133,23 @@ public class ECCorruptFilesAnalyzer {
         conf.getLong("ec.analyzer.expected.time.gap.between.oldest.blk.and.other.blks",
             EXPECTED_TIME_GAP_BETWEEN_OLDEST_BLK_AND_OTHER_BLOCKS);
     checkAgainstInodeTime = conf.getBoolean("ec.analyzer.check.against.inode.time", CHECK_AGAINST_INODE_TIME);
+
+    System.out.println(
+        "##############################################################################################");
+    System.out.println(
+        "#########   Loaded Configurations                                                  ");
+    System.out.println(
+        "#########   ec.analyzer.check.all.zero.blocks = " + checkAllZeros);
+    System.out.println(
+        "#########   ec.analyzer.expected.time.gap.between.file.and.blks = " + expected_time_gap_between_inode_and_blocks);
+    System.out.println(
+        "#########   ec.analyzer.expected.time.gap.between.oldest.blk.and.other.blks = " + expected_time_gap_between_oldest_blk_and_other_blks);
+    System.out.println(
+        "#########   ec.analyzer.check.against.inode.time = " + checkAgainstInodeTime);
+    System.out.println(
+        "##############################################################################################");
+
+
     //For now just use balancer key tab
     if (needSecureLogin) {
       secureLogin(conf);
@@ -151,13 +168,25 @@ public class ECCorruptFilesAnalyzer {
       for (ErasureCodingPolicyInfo ecInfo : dfs.getAllErasureCodingPolicies()) {
         ecNameVsPolicy.put(ecInfo.getPolicy().getName(), ecInfo.getPolicy());
       }
+      System.out.println("##############################################################################################");
+      System.out.println("#########  Loading the block time stamps and allZeros block details into memory   ############");
+      System.out.println("##############################################################################################");
       initStats(ecBlockStatsPath, conf);
+      System.out.println("##############################################################################################");
+      System.out.println("#########  Loading of the block time stamps and allZeros block details finished   ############");
+      System.out.println("##############################################################################################");
       results.start();
+      System.out.println("##############################################################################################");
+      System.out.println("#########            Crawling HDFS target paths for checking the corruption       ############");
+      System.out.println("##############################################################################################");
       processNamespace(targetPaths, dfs, results);
-      System.out.println(results);
     } finally {
       results.stopProcessorGracefully();
       dfs.close();
+      System.out.println("##############################################################################################");
+      System.out.println("#########                             Analysis Finished.                          ############");
+      System.out.println("#########   Finished. Please check the results at the location" +outPath+ "       ############");
+      System.out.println("##############################################################################################");
     }
   }
 
