@@ -1,0 +1,18 @@
+<assembly>
+    <id></id> 
+    <formats>
+        <format>tar.gz</format>
+    </formats>
+    <fileSets>
+        <fileSet>
+            <directory>scripts</directory>
+        </fileSet>
+   </fileSets>
+   <files>
+    <file>
+          <source>target/ec-corruption-analyzer-${project.version}.jar</source>
+          <outputDirectory></outputDirectory>
+          <filtered>true</filtered>
+    </file>
+   </files>
+</assembly>

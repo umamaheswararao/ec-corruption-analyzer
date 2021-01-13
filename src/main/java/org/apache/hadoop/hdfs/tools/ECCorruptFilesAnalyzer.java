@@ -736,7 +736,7 @@ public class ECCorruptFilesAnalyzer {
 
     private synchronized void writeSafeToRenameBlockPaths(
         Map<String, List<String>> safeBlocksToRename, int flushNum) {
-      if (safeBlocksToRename.size() > 0) {
+      if (safeBlocksToRename.size() >= 0) {
         return;
       }
       Iterator<Map.Entry<String, List<String>>> iter =
