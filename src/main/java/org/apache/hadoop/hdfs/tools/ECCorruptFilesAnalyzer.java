@@ -639,97 +639,118 @@ public class ECCorruptFilesAnalyzer {
     public void run() {
       running = true;
       while(true) {
-        PossibleImpactedECFile fileBlkGrps = poll();
-        if (fileBlkGrps != null) {
-          if (this.outPutPath == null) {
-            // This is just in memory for testing.
-            results
-                .put(fileBlkGrps.getFileName(), fileBlkGrps.blockGroups);
-            continue;
-          }
-          List<BlockGroup> blockGrpCorruptedBlocks =
-              fileBlkGrps.getBlockGroups();
+        try {
+          PossibleImpactedECFile fileBlkGrps = poll();
+          if (fileBlkGrps != null) {
+            if (this.outPutPath == null) {
+              // This is just in memory for testing.
+              results.put(fileBlkGrps.getFileName(), fileBlkGrps.blockGroups);
+              continue;
+            }
+            List<BlockGroup> blockGrpCorruptedBlocks =
+                fileBlkGrps.getBlockGroups();
 
-          List<BlockGroup> consolidatedBlkGrpJson = new ArrayList<>();
-          List<BlockGroup> unrecoverableBlkGrpJson = new ArrayList<>();
-          for (int i = 0; i < blockGrpCorruptedBlocks.size(); i++) {
-            BlockGroup blkGrp = blockGrpCorruptedBlocks.get(i);
-            if (blkGrp.getBlocks().size() <= ecNameVsPolicy
-                .get(fileBlkGrps.getPolicyName()).getNumParityUnits()) {
-              LOG.info(
-                  "Found recoverable block group in file:" + fileBlkGrps
-                      .getFileName() + " impacted blks : " + blkGrp
-                      .getBlocks());
-              for (Block blk : blkGrp.getBlocks()) {
-                //In EC, do we get more than one locations returned?
-                List<String> paths = safeBlocksToRename
-                    .getOrDefault(blk.locations[0], new ArrayList<>());
-                paths.add(blk.blockPath);
-                safeBlocksToRename.put(blk.locations[0], paths);
-              }
-            } else {
-              //unrecoverable block groups detected.
-              List<Block> unrecoverableBlksJson = new ArrayList<>();
-              for (Block blk : blkGrp.getBlocks()) {
-                unrecoverableBlksJson.add(new Block(blk.block, blk.getBlockPath(),blk. getLocations(), blk. getTimeStamp(), blk. getIsAllZeros(), blk.getIsParity(), blk.isMissingBlock));
-              }
-              unrecoverableBlkGrpJson.add(new BlockGroup(unrecoverableBlksJson, blkGrp.type));
+            List<BlockGroup> consolidatedBlkGrpJson = new ArrayList<>();
+            List<BlockGroup> unrecoverableBlkGrpJson = new ArrayList<>();
+            for (int i = 0; i < blockGrpCorruptedBlocks.size(); i++) {
+              BlockGroup blkGrp = blockGrpCorruptedBlocks.get(i);
+              if (blkGrp.getBlocks().size() <= ecNameVsPolicy
+                  .get(fileBlkGrps.getPolicyName()).getNumParityUnits()) {
+                LOG.info("Found recoverable block group in file:" + fileBlkGrps
+                    .getFileName() + " impacted blks : " + blkGrp.getBlocks());
+                for (Block blk : blkGrp.getBlocks()) {
+                  //In EC, do we get more than one locations returned?
+                  List<String> paths = safeBlocksToRename
+                      .getOrDefault(blk.locations[0], new ArrayList<>());
+                  paths.add(blk.blockPath);
+                  safeBlocksToRename.put(blk.locations[0], paths);
+                }
+              } else {
+                //unrecoverable block groups detected.
+                List<Block> unrecoverableBlksJson = new ArrayList<>();
+                for (Block blk : blkGrp.getBlocks()) {
+                  unrecoverableBlksJson.add(
+                      new Block(blk.block, blk.getBlockPath(),
+                          blk.getLocations(), blk.getTimeStamp(),
+                          blk.getIsAllZeros(), blk.getIsParity(),
+                          blk.isMissingBlock));
+                }
+                unrecoverableBlkGrpJson
+                    .add(new BlockGroup(unrecoverableBlksJson, blkGrp.type));
 
+              }
+
+              //consolidated
+              List<Block> consolBlksJson = new ArrayList<>();
+              for (Block blk : blkGrp.getBlocks()) {
+                consolBlksJson.add(
+                    new Block(blk.block, blk.getBlockPath(), blk.getLocations(),
+                        blk.getTimeStamp(), blk.getIsAllZeros(),
+                        blk.getIsParity(), blk.isMissingBlock));
+              }
+              consolidatedBlkGrpJson
+                  .add(new BlockGroup(consolBlksJson, blkGrp.type));
             }
 
-            //consolidated
-            List<Block> consolBlksJson = new ArrayList<>();
-            for (Block blk : blkGrp.getBlocks()) {
-              consolBlksJson.add(new Block(blk.block, blk.getBlockPath(),blk.getLocations(), blk. getTimeStamp(), blk.getIsAllZeros(), blk.getIsParity(), blk.isMissingBlock));
+            if (unrecoverableBlkGrpJson.size() > 0) {
+              try {
+                bwForUnrecoverableBlkGrpResultPath.write(
+                    MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(
+                        new PossibleImpactedECFile(fileBlkGrps.getFileName(),
+                            fileBlkGrps.getPolicyName(),
+                            fileBlkGrps.getBlockGroupSize(),
+                            unrecoverableBlkGrpJson)));
+                bwForUnrecoverableBlkGrpResultPath.newLine();
+                bwForUnrecoverableBlkGrpResultPath.flush();
+              } catch (IOException e) {
+                LOG.error("Unable to write unrecoverable block groups details",
+                    e);
+              }
             }
-            consolidatedBlkGrpJson.add(new BlockGroup(consolBlksJson, blkGrp.type));
-          }
 
-          if (unrecoverableBlkGrpJson.size() > 0) {
             try {
-              bwForUnrecoverableBlkGrpResultPath.write(
+              bwForConsolidatedResultPath.write(
                   MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(
-                      new PossibleImpactedECFile(fileBlkGrps.getFileName(),fileBlkGrps.getPolicyName(), fileBlkGrps.getBlockGroupSize(), unrecoverableBlkGrpJson)));
-              bwForUnrecoverableBlkGrpResultPath.newLine();
-              bwForUnrecoverableBlkGrpResultPath.flush();
+                      new PossibleImpactedECFile(fileBlkGrps.getFileName(),
+                          fileBlkGrps.getPolicyName(),
+                          fileBlkGrps.getBlockGroupSize(),
+                          consolidatedBlkGrpJson)));
+              bwForConsolidatedResultPath.newLine();
+              bwForConsolidatedResultPath.flush();
             } catch (IOException e) {
-              LOG.error("Unable to write unrecoverable block groups details",
+              LOG.error(
+                  "Unable to write consolidated impacted block groups details",
                   e);
             }
+
+            //check if we can flush to files
+            if (safeBlocksToRename.size() > 0) {
+              writeSafeToRenameBlockPaths(safeBlocksToRename,
+                  SAFE_BLK_RENAME_PER_NODE_FILE_FLUSH_NUM);
+            }
+
+          } else {
+            try {
+              Thread.sleep(1000);
+            } catch (InterruptedException e) {
+              Thread.currentThread().interrupt();
+              LOG.info("Results processor thread interrupted. Exiting");
+              break;
+              //
+            }
           }
 
-          try {
-            bwForConsolidatedResultPath.write(
-                MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(
-                    new PossibleImpactedECFile(fileBlkGrps.getFileName(),
-                        fileBlkGrps.getPolicyName(), fileBlkGrps.getBlockGroupSize(),  consolidatedBlkGrpJson)));
-            bwForConsolidatedResultPath.newLine();
-            bwForConsolidatedResultPath.flush();
-          } catch (IOException e) {
+          if (!running && poll() == null) { // scanning already done and called stop.
             LOG.error(
-                "Unable to write consolidated impacted block groups details",
-                e);
-          }
-
-          //check if we can flush to files
-          if (safeBlocksToRename.size() > 0) {
-            writeSafeToRenameBlockPaths(safeBlocksToRename,
-                SAFE_BLK_RENAME_PER_NODE_FILE_FLUSH_NUM);
-          }
-
-        } else {
-          try {
-            Thread.sleep(1000);
-          } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            LOG.info("Results processor thread interrupted. Exiting");
+                "Finished scanning and results processor flushes if any pending results.");
             break;
-            //
           }
-        }
-
-        if(!running && poll() == null){ // scanning already done and called stop.
-          break;
+        } catch (Throwable t) {
+          System.err.println(
+              "Fatal exception in Results processor Thread. Exiting. Unable to flush the safeBlockToRename:" + safeBlocksToRename);
+          System.err.println(t.getCause());
+          LOG.error("Exception in ResultsProcessor. Exiting.", t);
+          System.exit(-1);
         }
       }
     }
