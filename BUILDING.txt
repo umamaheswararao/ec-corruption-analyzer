@@ -1,0 +1,11 @@
+## Building from source
+
+git clone https://github.com/umamaheswararao/ec-corruption-analyzer.git
+
+cd ec-corruption-analyzer
+
+mvn clean install package 
+
+Note: The default hadoop.version is 3.0.0-cdh6.3.4. If you are using different hadoop version, please use -D option in mvn commnd. E.g.: mvn clean install package -Dhadoop.version=3.0.0-cdh6.3.5
+
+This will generate ec-corruption-analyzer-<VERSION>.tar.gz file in target folder and it will contain ec-corruption-analyzer-<VERSION>.jar and scripts folder.

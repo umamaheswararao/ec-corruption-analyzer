@@ -4,9 +4,9 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>org.example</groupId>
+    <groupId>com.cloudera</groupId>
     <artifactId>ec-corruption-analyzer</artifactId>
-    <version>1.0-SNAPSHOT</version>
+    <version>1.0-${hadoop.version}</version>
     <packaging>jar</packaging>
     <properties>
         <hadoop.version>3.0.0-cdh6.3.4</hadoop.version>
@@ -24,6 +24,23 @@
                     <target>1.8</target>
                 </configuration>
             </plugin>
+            <plugin>
+               <artifactId>maven-assembly-plugin</artifactId>
+               <version>2.2-beta-5</version>
+               <configuration>
+                 <descriptors>
+                    <descriptor>src/main/assembly/assembly.xml</descriptor>
+                 </descriptors>
+               </configuration>
+               <executions>
+                    <execution>
+                       <phase>package</phase>
+                       <goals>
+                          <goal>single</goal>
+                       </goals>
+                    </execution>
+               </executions>
+           </plugin>
         </plugins>
     </build>
 

@@ -2,15 +2,13 @@
 
 git clone https://github.com/umamaheswararao/ec-corruption-analyzer.git
 
-cd ec-corruption-analyzer
+Please refer BUILDING.txt file at project root folder and generate the package.
 
-mvn clean install
-
-we can find the ec-corruption-analyzer-1.0-SNAPSHOT.jar generated in target folder.
+## Usage
 
 We can analyze the EC corruption in two step process.
 
-## Step1: 
+### Step1: 
 We need to generate the block timestamps and allzero blocks from all datanode.
 To generate that information, please use the scripts/EC_Blks_TimeStamp_And_AllZeroBlks_Finder.sh to generate the required information.
 The above script needs list of data directories with comma separated as input and you need to run this in every datanode. 
@@ -29,7 +27,7 @@ The output structure would be in the following:
                             /DN3_HOSTNAME 
                             .............
 
-## Step2:
+### Step2:
 After the step1, we should have generated all the required blocks meta information to run the analyzer tool.
 
 Use any of hadoop node to run this tool where same version of hadoop installed and fs.defaultFS pointing to the same cluster where /scanning folder exist.

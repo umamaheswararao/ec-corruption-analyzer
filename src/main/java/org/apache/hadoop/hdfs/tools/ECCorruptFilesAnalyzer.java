@@ -41,6 +41,7 @@ import org.apache.hadoop.hdfs.protocol.LocatedStripedBlock;
 import org.apache.hadoop.hdfs.server.namenode.INode;
 import org.apache.hadoop.hdfs.util.StripedBlockUtil;
 import org.apache.curator.shaded.com.google.common.collect.Lists;
+import org.apache.hadoop.io.IOUtils;
 import org.apache.hadoop.net.NetUtils;
 import org.apache.hadoop.security.SecurityUtil;
 import org.apache.hadoop.security.UserGroupInformation;
@@ -49,6 +50,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
@@ -99,6 +101,22 @@ public class ECCorruptFilesAnalyzer {
     stats.init(ecBlockStatsPath, conf);
   }
 
+  private static List<Path> readPathFile(String file) throws IOException {
+    List<Path> list = com.google.common.collect.Lists.newArrayList();
+    BufferedReader reader = new BufferedReader(
+        new InputStreamReader(new FileInputStream(file), "UTF-8"));
+    try {
+      String line;
+      while ((line = reader.readLine()) != null) {
+        if (!line.trim().isEmpty()) {
+          list.add(new Path(line));
+        }
+      }
+    } finally {
+      IOUtils.cleanup(null, reader);
+    }
+    return list;
+  }
 
   /**
    * Main method to start validating service service.
@@ -114,10 +132,16 @@ public class ECCorruptFilesAnalyzer {
     }
 
     Path ecBlockStatsPath = new Path(args[0]);
-    String split[] = args[1].split(",");
-    Path targetPaths[] = new Path[split.length];
-    for (int i = 0; i < split.length; i++) {
-      targetPaths[i] = new Path(split[i]);
+    List targetPaths = new ArrayList();//Path[split.length];
+    String targetPathArg = args[1];
+    if (targetPathArg.startsWith("targetPathsFile=")) {
+      targetPaths = readPathFile(targetPathArg
+          .substring("targetPathFile=".length() - 1, targetPathArg.length()));
+    } else {
+      String split[] = args[1].split(",");
+      for (int i = 0; i < split.length; i++) {
+        targetPaths.add(new Path(split[i]));
+      }
     }
 
     Path outPath = args.length > 2 ? new Path(args[2]) : null;
@@ -158,7 +182,7 @@ public class ECCorruptFilesAnalyzer {
     analyzer.analyze(ecBlockStatsPath, targetPaths, outPath, conf);
   }
 
-  public void analyze(Path ecBlockStatsPath, Path[] targetPaths, Path outPath,
+  public void analyze(Path ecBlockStatsPath, List<Path> targetPaths, Path outPath,
       Configuration conf)
       throws IOException, URISyntaxException, InterruptedException {
     DistributedFileSystem dfs = new DistributedFileSystem();
@@ -185,7 +209,7 @@ public class ECCorruptFilesAnalyzer {
       dfs.close();
       System.out.println("##############################################################################################");
       System.out.println("#########                             Analysis Finished.                          ############");
-      System.out.println("#########   Finished. Please check the results at the location" +outPath+ "       ############");
+      System.out.println("#########   Finished. Please check the results at the location : " +outPath+ "       ############");
       System.out.println("##############################################################################################");
     }
   }
@@ -201,7 +225,7 @@ public class ECCorruptFilesAnalyzer {
         socAddr.getHostName());
   }
 
-  public static void processNamespace(Path[] targetPaths,
+  public static void processNamespace(List<Path> targetPaths,
       DistributedFileSystem dfs, ResultsProcessor results) throws IOException {
     for (Path target : targetPaths) {
       processPath(target.toUri().getPath(), dfs, results);
@@ -272,6 +296,7 @@ public class ECCorruptFilesAnalyzer {
     final ErasureCodingPolicy ecPolicy = locatedBlocks.getErasureCodingPolicy();
 
     if (ecPolicy != null) { //Found EC file
+      LOG.debug("Found EC file to scan:" + fullPath);
       int totalBlockGrpNum =
           ecPolicy.getNumDataUnits() + ecPolicy.getNumParityUnits();
       final int cellSize = ecPolicy.getCellSize();
@@ -602,15 +627,19 @@ public class ECCorruptFilesAnalyzer {
       return this.results;
     }
 
-    public void addToResult(String file, int blockGroupSize, List<BlockGroup> bgCorruptBlks, String policyName) {
+    public synchronized void addToResult(String file, int blockGroupSize, List<BlockGroup> bgCorruptBlks, String policyName) {
       queue.offer(new PossibleImpactedECFile(file,policyName,blockGroupSize, bgCorruptBlks));
+    }
+
+    public synchronized PossibleImpactedECFile poll() {
+      return queue.poll();
     }
 
     @Override
     public void run() {
       running = true;
-      while(running) {
-        PossibleImpactedECFile fileBlkGrps = queue.poll();
+      while(true) {
+        PossibleImpactedECFile fileBlkGrps = poll();
         if (fileBlkGrps != null) {
           if (this.outPutPath == null) {
             // This is just in memory for testing.
@@ -627,7 +656,7 @@ public class ECCorruptFilesAnalyzer {
             BlockGroup blkGrp = blockGrpCorruptedBlocks.get(i);
             if (blkGrp.getBlocks().size() <= ecNameVsPolicy
                 .get(fileBlkGrps.getPolicyName()).getNumParityUnits()) {
-              System.out.println(
+              LOG.info(
                   "Found recoverable block group in file:" + fileBlkGrps
                       .getFileName() + " impacted blks : " + blkGrp
                       .getBlocks());
@@ -692,14 +721,24 @@ public class ECCorruptFilesAnalyzer {
           try {
             Thread.sleep(1000);
           } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            LOG.info("Results processor thread interrupted. Exiting");
+            break;
             //
           }
+        }
+
+        if(!running && poll() == null){ // scanning already done and called stop.
+          break;
         }
       }
     }
 
     private synchronized void writeSafeToRenameBlockPaths(
         Map<String, List<String>> safeBlocksToRename, int flushNum) {
+      if (safeBlocksToRename.size() > 0) {
+        return;
+      }
       Iterator<Map.Entry<String, List<String>>> iter =
           safeBlocksToRename.entrySet().iterator();
       while(iter.hasNext()){
@@ -710,6 +749,7 @@ public class ECCorruptFilesAnalyzer {
           if(fs!=null && safeBlksToRenamePath !=null){
             Path filePath = new Path(safeBlksToRenamePath, next.getKey());
             try {
+              // Use cache for fos, otherwise it's inefficient.
               try (FSDataOutputStream fos = fs.exists(filePath) ?
                   fs.append(filePath) :
                   fs.create(filePath)) {

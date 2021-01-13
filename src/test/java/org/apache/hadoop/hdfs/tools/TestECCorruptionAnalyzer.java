@@ -255,7 +255,8 @@ public class TestECCorruptionAnalyzer {
 
   private List<String> analyzeECCorruption()
       throws Exception {
-    Path[] paths = new Path[] {new Path("/")};
+    List<Path> paths = new ArrayList<>();
+    paths.add(new Path("/"));
     ECCorruptFilesAnalyzer analyzer = new ECCorruptFilesAnalyzer();
     Path out = new Path("/scanning");
     analyzer.analyze(statsDirPath, paths, out, conf);
