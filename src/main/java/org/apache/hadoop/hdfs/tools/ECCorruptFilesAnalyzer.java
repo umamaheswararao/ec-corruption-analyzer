@@ -63,6 +63,7 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -82,6 +83,8 @@ public class ECCorruptFilesAnalyzer {
   private static ECBlockStatsProvider stats = new ECBlockStatsProvider();
   private static long EXPECTED_TIME_GAP_BETWEEN_FILE_AND_BLOCKS = 5 * 60 * 1000;
   private static long EXPECTED_TIME_GAP_BETWEEN_OLDEST_BLK_AND_OTHER_BLOCKS = 5 * 1000;
+  private static final int SAFE_TO_RENAME_BLOCKS_STREAMS_CACHE_DEFAULT = 250;
+  private static int safeToRenameBlksStreamsCacheSize = SAFE_TO_RENAME_BLOCKS_STREAMS_CACHE_DEFAULT;
   static String ALL_ZEROS_BLOCKS_FOLDER = "allzeroblocks";
   static String BLOCK_TIME_STAMPS_FOLDER = "blocktimestamps";
   private static long expected_time_gap_between_inode_and_blocks =
@@ -159,6 +162,7 @@ public class ECCorruptFilesAnalyzer {
         conf.getLong("ec.analyzer.expected.time.gap.between.oldest.blk.and.other.blks",
             EXPECTED_TIME_GAP_BETWEEN_OLDEST_BLK_AND_OTHER_BLOCKS);
     checkAgainstInodeTime = conf.getBoolean("ec.analyzer.check.against.inode.time", CHECK_AGAINST_INODE_TIME);
+    safeToRenameBlksStreamsCacheSize = conf.getInt("safe.to.rename.blks.streams.cache", SAFE_TO_RENAME_BLOCKS_STREAMS_CACHE_DEFAULT);
 
     System.out.println(
         "##############################################################################################");
@@ -594,6 +598,7 @@ public class ECCorruptFilesAnalyzer {
     private Path outPutPath;
     private Path safeBlksToRenamePath;
     private FileSystem fs;
+    private OutputStreamCache<Path, FSDataOutputStream> cache  =   new OutputStreamCache<>(safeToRenameBlksStreamsCacheSize);
 
     public ResultsProcessor(Path outPutPath, Configuration conf) throws IOException {
       this.outPutPath = outPutPath;
@@ -781,41 +786,82 @@ public class ECCorruptFilesAnalyzer {
           //Let's flush
           if(fs!=null && safeBlksToRenamePath !=null){
             Path filePath = new Path(safeBlksToRenamePath, next.getKey());
-            FSDataOutputStream fos = null;
+            FSDataOutputStream fos = cache.get(filePath);
             try {
-              // Use cache for fos, otherwise it's inefficient.
-              boolean isFileExist = fs.exists(filePath);
-              if (isFileExist) {
-                if (fs instanceof DistributedFileSystem) {
-                  fos = fs.append(filePath);
+              if (fos == null) {
+                // Use cache for fos, otherwise it's inefficient.
+                boolean isFileExist = fs.exists(filePath);
+                if (isFileExist) {
+                  if (fs instanceof DistributedFileSystem) {
+                    fos = fs.append(filePath);
+                  } else {
+                    RandomAccessFile rw =
+                        new RandomAccessFile(filePath.getName(), "rw");
+                    rw.skipBytes((int) rw.length());
+                    fos = new FSDataOutputStream(new FileOutputStream(rw.getFD()),
+                        null);
+                  }
                 } else {
-                  RandomAccessFile rw =
-                      new RandomAccessFile(filePath.getName(), "rw");
-                  rw.skipBytes((int) rw.length());
-                  fos = new FSDataOutputStream(new FileOutputStream(rw.getFD()),
-                      null);
+                  fos = fs.create(filePath);
                 }
-              } else{
-                fos = fs.create(filePath);
+                cache.put(filePath, fos);
               }
               BufferedWriter bw =
                   new BufferedWriter(new OutputStreamWriter(fos));
               for (int i = 0; i < paths.size(); i++) {
                 bw.write(paths.get(i));
                 bw.newLine();
-                bw.flush();
               }
-              bw.close();
+              bw.flush();
             } catch (IOException e) {
               LOG.error("Unable to write to safe to rename blocks path", e);
-            } finally{
-              if (fos != null) {
-                IOUtils.closeStream(fos);
-              }
+              IOUtils.cleanupWithLogger(LOG, fos);
+              cache.remove(filePath);
             }
           }//fs not available
           iter.remove();
         }
+      }
+
+
+
+    }
+
+    // Not necessarily required LRU as we might not have a pattern, but it's just fine to use it here.
+    public static class OutputStreamCache<Path, FSDataOutputStream> extends
+        LinkedHashMap<org.apache.hadoop.fs.Path, org.apache.hadoop.fs.FSDataOutputStream> {
+      private int size;
+
+      private OutputStreamCache(int size) {
+        super(size, 0.75f, true);
+        this.size = size;
+      }
+
+      @Override
+      protected boolean removeEldestEntry(
+          Map.Entry<org.apache.hadoop.fs.Path, org.apache.hadoop.fs.FSDataOutputStream> eldest) {
+        boolean res = size() > size;
+        if (res) {
+          try {
+            eldest.getValue().close();
+          } catch (IOException e) {
+            e.printStackTrace();
+          }
+        }
+        return res;
+      }
+
+      @Override
+      public org.apache.hadoop.fs.FSDataOutputStream remove(Object key) {
+        assert key instanceof org.apache.hadoop.fs.Path;
+        org.apache.hadoop.fs.FSDataOutputStream os =
+            (org.apache.hadoop.fs.FSDataOutputStream) super.remove(key);
+        try {
+          os.close();
+        } catch (IOException e) {
+          e.printStackTrace();
+        }
+        return os;
       }
     }
 
@@ -835,7 +881,12 @@ public class ECCorruptFilesAnalyzer {
       if(bwForUnrecoverableBlkGrpResultPath !=null){
         bwForUnrecoverableBlkGrpResultPath.close();
       }
-
+      //close all the cached streams
+      LOG.info("Closing the cached streams. Num streams cached: " + cache.size);
+      Iterator<FSDataOutputStream> iterator = cache.values().iterator();
+      while (iterator.hasNext()) {
+        IOUtils.cleanupWithLogger(LOG, iterator.next());
+      }
       this.interrupt();
     }
 
