@@ -108,13 +108,14 @@ public class ECCorruptFilesAnalyzer {
 
   private static List<Path> readPathFile(String file) throws IOException {
     List<Path> list = com.google.common.collect.Lists.newArrayList();
+    LOG.info("Reading target file paths from : " + file);
     BufferedReader reader = new BufferedReader(
         new InputStreamReader(new FileInputStream(file), "UTF-8"));
     try {
       String line;
       while ((line = reader.readLine()) != null) {
         if (!line.trim().isEmpty()) {
-          list.add(new Path(line));
+          list.add(new Path(line.trim()));
         }
       }
     } finally {
@@ -141,7 +142,7 @@ public class ECCorruptFilesAnalyzer {
     String targetPathArg = args[1];
     if (targetPathArg.startsWith("targetPathsFile=")) {
       targetPaths = readPathFile(targetPathArg
-          .substring("targetPathFile=".length() - 1, targetPathArg.length()));
+          .substring("targetPathFile=".length() + 1, targetPathArg.length()));
     } else {
       String split[] = args[1].split(",");
       for (int i = 0; i < split.length; i++) {
@@ -176,6 +177,11 @@ public class ECCorruptFilesAnalyzer {
         "#########   ec.analyzer.expected.time.gap.between.oldest.blk.and.other.blks = " + expected_time_gap_between_oldest_blk_and_other_blks);
     System.out.println(
         "#########   ec.analyzer.check.against.inode.time = " + checkAgainstInodeTime);
+    System.out.println(
+        "#########   safe.to.rename.blks.streams.cache = " + safeToRenameBlksStreamsCacheSize);
+    System.out.println(
+        "#########   If you need to change any of these configurations, please add these configs in hdfs-site.xml and update accordingly." +
+            " Please note, the configurations are used only by EC Corruption analyzer tool only.");
     System.out.println(
         "##############################################################################################");
 
@@ -681,8 +687,10 @@ public class ECCorruptFilesAnalyzer {
                   safeBlocksToRename.put(blk.locations[0], paths);
                 }
               } else {
-                LOG.info("Found unrecoverable block group in file:" + fileBlkGrps
-                    .getFileName() + " impacted blks : " + blkGrp.getBlocks());
+                LOG.info(
+                    "Found unrecoverable block group in file:" + fileBlkGrps
+                        .getFileName() + " impacted blks : " + blkGrp
+                        .getBlocks());
                 //unrecoverable block groups detected.
                 List<Block> unrecoverableBlksJson = new ArrayList<>();
                 for (Block blk : blkGrp.getBlocks()) {
@@ -842,11 +850,7 @@ public class ECCorruptFilesAnalyzer {
           Map.Entry<org.apache.hadoop.fs.Path, org.apache.hadoop.fs.FSDataOutputStream> eldest) {
         boolean res = size() > size;
         if (res) {
-          try {
-            eldest.getValue().close();
-          } catch (IOException e) {
-            e.printStackTrace();
-          }
+          IOUtils.cleanupWithLogger(LOG, eldest.getValue());
         }
         return res;
       }
@@ -856,11 +860,7 @@ public class ECCorruptFilesAnalyzer {
         assert key instanceof org.apache.hadoop.fs.Path;
         org.apache.hadoop.fs.FSDataOutputStream os =
             (org.apache.hadoop.fs.FSDataOutputStream) super.remove(key);
-        try {
-          os.close();
-        } catch (IOException e) {
-          e.printStackTrace();
-        }
+        IOUtils.cleanupWithLogger(LOG, os);
         return os;
       }
     }
@@ -882,7 +882,7 @@ public class ECCorruptFilesAnalyzer {
         bwForUnrecoverableBlkGrpResultPath.close();
       }
       //close all the cached streams
-      LOG.info("Closing the cached streams. Num streams cached: " + cache.size);
+      LOG.info("Closing the cached streams. Num streams cached: " + cache.size());
       Iterator<FSDataOutputStream> iterator = cache.values().iterator();
       while (iterator.hasNext()) {
         IOUtils.cleanupWithLogger(LOG, iterator.next());
