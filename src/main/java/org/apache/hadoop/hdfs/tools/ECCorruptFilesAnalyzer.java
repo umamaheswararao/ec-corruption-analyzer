@@ -50,12 +50,12 @@ import org.slf4j.LoggerFactory;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
+import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
-import java.io.RandomAccessFile;
 import java.net.InetSocketAddress;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
@@ -803,10 +803,10 @@ public class ECCorruptFilesAnalyzer {
                   if (fs instanceof DistributedFileSystem) {
                     fos = fs.append(filePath);
                   } else {
-                    RandomAccessFile rw =
-                        new RandomAccessFile(filePath.getName(), "rw");
-                    rw.skipBytes((int) rw.length());
-                    fos = new FSDataOutputStream(new FileOutputStream(rw.getFD()),
+                    File f = new File(filePath.getName());
+                    FileOutputStream os = new FileOutputStream(f, true);
+                    os.getChannel().position(f.length());
+                    fos = new FSDataOutputStream(os,
                         null);
                   }
                 } else {
