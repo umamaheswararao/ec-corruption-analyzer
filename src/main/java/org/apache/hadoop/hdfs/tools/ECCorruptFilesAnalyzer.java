@@ -51,9 +51,11 @@ import org.slf4j.LoggerFactory;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
+import java.io.RandomAccessFile;
 import java.net.InetSocketAddress;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
@@ -635,6 +637,10 @@ public class ECCorruptFilesAnalyzer {
       return queue.poll();
     }
 
+    public synchronized boolean isEmpty() {
+      return queue.isEmpty();
+    }
+
     @Override
     public void run() {
       running = true;
@@ -660,12 +666,18 @@ public class ECCorruptFilesAnalyzer {
                     .getFileName() + " impacted blks : " + blkGrp.getBlocks());
                 for (Block blk : blkGrp.getBlocks()) {
                   //In EC, do we get more than one locations returned?
+                  if(blk.blockPath.equals("")){
+                    // if empty block path, then no need to dump.
+                    continue;
+                  }
                   List<String> paths = safeBlocksToRename
                       .getOrDefault(blk.locations[0], new ArrayList<>());
                   paths.add(blk.blockPath);
                   safeBlocksToRename.put(blk.locations[0], paths);
                 }
               } else {
+                LOG.info("Found unrecoverable block group in file:" + fileBlkGrps
+                    .getFileName() + " impacted blks : " + blkGrp.getBlocks());
                 //unrecoverable block groups detected.
                 List<Block> unrecoverableBlksJson = new ArrayList<>();
                 for (Block blk : blkGrp.getBlocks()) {
@@ -748,8 +760,7 @@ public class ECCorruptFilesAnalyzer {
         } catch (Throwable t) {
           System.err.println(
               "Fatal exception in Results processor Thread. Exiting. Unable to flush the safeBlockToRename:" + safeBlocksToRename);
-          System.err.println(t.getCause());
-          LOG.error("Exception in ResultsProcessor. Exiting.", t);
+          LOG.error("Exception in ResultsProcessor. Exiting..", t);
           System.exit(-1);
         }
       }
@@ -769,21 +780,35 @@ public class ECCorruptFilesAnalyzer {
           //Let's flush
           if(fs!=null && safeBlksToRenamePath !=null){
             Path filePath = new Path(safeBlksToRenamePath, next.getKey());
+            FSDataOutputStream fos = null;
             try {
               // Use cache for fos, otherwise it's inefficient.
-              try (FSDataOutputStream fos = fs.exists(filePath) ?
-                  fs.append(filePath) :
-                  fs.create(filePath)) {
-                BufferedWriter bw =
-                    new BufferedWriter(new OutputStreamWriter(fos));
-                for (int i = 0; i < paths.size(); i++) {
-                  bw.write(paths.get(i));
-                  bw.newLine();
+              boolean isFileExist = fs.exists(filePath);
+              if (isFileExist) {
+                if (fs instanceof DistributedFileSystem) {
+                  fos = fs.append(filePath);
+                } else {
+                  RandomAccessFile rw =
+                      new RandomAccessFile(filePath.getName(), "rw");
+                  rw.skipBytes((int) rw.length());
+                  fos = new FSDataOutputStream(new FileOutputStream(rw.getFD()),
+                      null);
                 }
-                bw.close();
+              } else{
+                fos = fs.create(filePath);
               }
-
+              BufferedWriter bw =
+                  new BufferedWriter(new OutputStreamWriter(fos));
+              for (int i = 0; i < paths.size(); i++) {
+                bw.write(paths.get(i));
+                bw.newLine();
+                bw.flush();
+              }
+              bw.close();
             } catch (IOException e) {
+              if (fos != null) {
+                IOUtils.closeStream(fos);
+              }
               LOG.error("Unable to write to safe to rename blocks path", e);
             }
           }//fs not available
@@ -794,12 +819,11 @@ public class ECCorruptFilesAnalyzer {
 
     public void stopProcessorGracefully()
         throws InterruptedException, IOException {
-      while(!queue.isEmpty()){
+      while(!isEmpty()){
         Thread.sleep(1000);
       }
-      if(safeBlocksToRename.size()>0){
-        writeSafeToRenameBlockPaths(safeBlocksToRename, 0);
-      }
+      //Flush out if any pending
+      writeSafeToRenameBlockPaths(safeBlocksToRename, 0);
       running = false;
 
       if(bwForConsolidatedResultPath!=null){
@@ -922,6 +946,12 @@ public class ECCorruptFilesAnalyzer {
       return isMissingBlock;
     }
 
+    @Override
+    public String toString() {
+      return "Block{" + "block=" + block + ", blockPath='" + blockPath + '\'' + ", locations=" + Arrays
+          .toString(
+              locations) + ", timeStamp=" + timeStamp + ", isAllZeros=" + isAllZeros + ", isParity=" + isParity + ", isMissingBlock=" + isMissingBlock + '}';
+    }
   }
 
   static class BlockGroup {
@@ -944,6 +974,11 @@ public class ECCorruptFilesAnalyzer {
 
     public List<Block> getBlocks() {
       return blocks;
+    }
+
+    @Override
+    public String toString() {
+      return "BlockGroup{" + "type=" + type + ", blocks=" + blocks + '}';
     }
   }
 
@@ -991,6 +1026,11 @@ public class ECCorruptFilesAnalyzer {
 
     public List<BlockGroup> getBlockGroups() {
       return blockGroups;
+    }
+
+    @Override
+    public String toString() {
+      return "PossibleImpactedECFile{" + "fileName='" + fileName + '\'' + ", policyName='" + policyName + '\'' + ", blockGroupSize=" + blockGroupSize + ", blockGroups=" + blockGroups + '}';
     }
   }
 }

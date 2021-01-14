@@ -175,6 +175,7 @@ public class TestECCorruptionAnalyzer {
     init(dataBlocks);
     List<Byte> busyNodes = new ArrayList<>();
     busyNodes.add((byte) 5);
+
     //1. create EC file
     final Path ecFile = new Path(ecDir, "ECCorruptFileAnalyzer");
     int writeBytes = cellSize * dataBlocks;
@@ -258,6 +259,7 @@ public class TestECCorruptionAnalyzer {
     List<Path> paths = new ArrayList<>();
     paths.add(new Path("/"));
     ECCorruptFilesAnalyzer analyzer = new ECCorruptFilesAnalyzer();
+    //Path out = new Path("file:///Users/umagangumalla/Work/repos/PRs/ec-corruption-analyzer/test");
     Path out = new Path("/scanning");
     analyzer.analyze(statsDirPath, paths, out, conf);
     analyzer.stop();
