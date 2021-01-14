@@ -777,6 +777,7 @@ public class ECCorruptFilesAnalyzer {
         Map.Entry<String, List<String>> next = iter.next();
         List<String> paths = next.getValue();
         if(paths.size()>flushNum){ //make it configurable
+
           //Let's flush
           if(fs!=null && safeBlksToRenamePath !=null){
             Path filePath = new Path(safeBlksToRenamePath, next.getKey());
@@ -806,10 +807,11 @@ public class ECCorruptFilesAnalyzer {
               }
               bw.close();
             } catch (IOException e) {
+              LOG.error("Unable to write to safe to rename blocks path", e);
+            } finally{
               if (fos != null) {
                 IOUtils.closeStream(fos);
               }
-              LOG.error("Unable to write to safe to rename blocks path", e);
             }
           }//fs not available
           iter.remove();
