@@ -12,7 +12,6 @@
     <file>
           <source>target/ec-corruption-analyzer-${project.version}.jar</source>
           <outputDirectory></outputDirectory>
-          <filtered>true</filtered>
     </file>
    </files>
 </assembly>
