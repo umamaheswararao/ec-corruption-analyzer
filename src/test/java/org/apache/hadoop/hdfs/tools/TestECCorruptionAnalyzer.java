@@ -200,8 +200,8 @@ public class TestECCorruptionAnalyzer {
     DirectoryListing directoryListing =
         dfs.getClient().listPaths(ecFile.toString(), "".getBytes(), true);
     HdfsFileStatus[] partialListing = directoryListing.getPartialListing();
-    LocatedBlocks locatedBlocks =
-        ((HdfsLocatedFileStatus) partialListing[0]).getBlockLocations();
+    LocatedBlocks locatedBlocks = ECCorruptFilesAnalyzer
+        .getLocatedBlocks(((HdfsLocatedFileStatus) partialListing[0]));
     for (int bg = 0; bg < locatedBlocks.getLocatedBlocks().size(); bg++) {
       LocatedBlock[] lbs = StripedBlockUtil.parseStripedBlockGroup(
           (LocatedStripedBlock) locatedBlocks.getLocatedBlocks().get(bg),

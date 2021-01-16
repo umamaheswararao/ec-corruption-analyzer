@@ -18,6 +18,7 @@
 package org.apache.hadoop.hdfs.tools;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.apache.hadoop.HadoopIllegalArgumentException;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FSDataOutputStream;
@@ -56,6 +57,8 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.net.InetSocketAddress;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
@@ -303,7 +306,7 @@ public class ECCorruptFilesAnalyzer {
 
   private static void processFile(String fullPath, HdfsLocatedFileStatus status,
       DistributedFileSystem dfs, ResultsProcessor results) {
-    final LocatedBlocks locatedBlocks = status.getBlockLocations();
+    final LocatedBlocks locatedBlocks = getLocatedBlocks(status);
     long inodeModificationTime = status.getModificationTime();
     final ErasureCodingPolicy ecPolicy = locatedBlocks.getErasureCodingPolicy();
 
@@ -415,6 +418,31 @@ public class ECCorruptFilesAnalyzer {
         results.addToResult(fullPath,totalBlockGrpNum, bgCorruptBlks, ecPolicy.getName());
       }
     }
+  }
+
+  static LocatedBlocks getLocatedBlocks(HdfsLocatedFileStatus status) {
+    Object obj = status.getBlockLocations();
+    if (!(obj instanceof LocatedBlocks)) {
+      Method m;
+      try {
+        m = HdfsLocatedFileStatus.class.getMethod("getLocatedBlocks");
+      } catch (NoSuchMethodException err) {
+        throw new HadoopIllegalArgumentException(
+            "Can't find the method getLocatedBlocks in HdfsLocatedFileStatus");
+      }
+      if (m != null) {
+        try {
+          obj = m.invoke(status, null);
+        } catch (IllegalAccessException e) {
+          throw new RuntimeException(
+              "IllegalAccessException when invoking getLocatedBlocks method.");
+        } catch (InvocationTargetException e) {
+          throw new RuntimeException(
+              "InvocationTargetException when invoking getLocatedBlocks method.");
+        }
+      }
+    }
+    return (LocatedBlocks) obj;
   }
 
   private static boolean checkWithInodeTime(long inodeModificationTime,
