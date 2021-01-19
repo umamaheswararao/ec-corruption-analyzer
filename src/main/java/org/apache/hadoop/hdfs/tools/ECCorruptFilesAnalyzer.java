@@ -336,7 +336,7 @@ public class ECCorruptFilesAnalyzer {
         for (int i=0; i< blocks.length; i++) {
           LocatedBlock block = blocks[i];
           if (block == null) {
-            System.out.println(
+            LOG.debug(
                 "Block location is not reported to NN by any DN. So, ignoring this block from analysis. The block is:" + new org.apache.hadoop.hdfs.protocol.Block(
                     firstBlock.getBlock()
                         .getBlockId() + i) + " and the file name is: " + fullPath);
