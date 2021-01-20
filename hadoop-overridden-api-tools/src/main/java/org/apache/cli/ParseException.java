@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package org.apache.commons.cli;
+package org.apache.cli;
 
 /**
  * Base for Exceptions thrown during parsing of a command-line.

@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package org.apache.commons.cli;
+package org.apache.cli;
 
 import java.util.Collection;
 import java.util.Iterator;

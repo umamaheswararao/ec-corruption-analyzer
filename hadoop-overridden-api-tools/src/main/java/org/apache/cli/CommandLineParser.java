@@ -15,12 +15,12 @@
  * limitations under the License.
  */
 
-package org.apache.commons.cli;
+package org.apache.cli;
 
 /**
  * A class that implements the <code>CommandLineParser</code> interface
  * can parse a String array according to the {@link Options} specified
- * and return a {@link CommandLine}.
+ * and return a {@link org.apache.cli.CommandLine}.
  *
  * @version $Id: CommandLineParser.java 1443102 2013-02-06 18:12:16Z tn $
  */
@@ -33,10 +33,11 @@ public interface CommandLineParser
      * @param arguments the command line arguments
      * @return the list of atomic option and value tokens
      *
-     * @throws ParseException if there are any problems encountered
+     * @throws org.apache.cli.ParseException if there are any problems encountered
      * while parsing the command line tokens.
      */
-    CommandLine parse(Options options, String[] arguments) throws ParseException;
+    org.apache.cli.CommandLine parse(Options options, String[] arguments) throws
+        org.apache.cli.ParseException;
 
     /**
      * Parse the arguments according to the specified options and
@@ -47,7 +48,7 @@ public interface CommandLineParser
      * @param properties command line option name-value pairs
      * @return the list of atomic option and value tokens
      *
-     * @throws ParseException if there are any problems encountered
+     * @throws org.apache.cli.ParseException if there are any problems encountered
      * while parsing the command line tokens.
      */
     /* To maintain binary compatibility, this is commented out.
@@ -64,14 +65,15 @@ public interface CommandLineParser
      * @param arguments the command line arguments
      * @param stopAtNonOption if <tt>true</tt> an unrecognized argument stops
      *     the parsing and the remaining arguments are added to the 
-     *     {@link CommandLine}s args list. If <tt>false</tt> an unrecognized
+     *     {@link org.apache.cli.CommandLine}s args list. If <tt>false</tt> an unrecognized
      *     argument triggers a ParseException.
      *
      * @return the list of atomic option and value tokens
-     * @throws ParseException if there are any problems encountered
+     * @throws org.apache.cli.ParseException if there are any problems encountered
      * while parsing the command line tokens.
      */
-    CommandLine parse(Options options, String[] arguments, boolean stopAtNonOption) throws ParseException;
+    org.apache.cli.CommandLine parse(Options options, String[] arguments, boolean stopAtNonOption) throws
+        org.apache.cli.ParseException;
 
     /**
      * Parse the arguments according to the specified options and

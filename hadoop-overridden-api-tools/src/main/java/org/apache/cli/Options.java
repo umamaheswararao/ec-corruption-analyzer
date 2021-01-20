@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package org.apache.commons.cli;
+package org.apache.cli;
 
 import java.io.Serializable;
 import java.util.ArrayList;
@@ -29,14 +29,14 @@ import java.util.Map;
 /**
  * Main entry-point into the library.
  * <p>
- * Options represents a collection of {@link Option} objects, which
+ * Options represents a collection of {@link org.apache.cli.Option} objects, which
  * describe the possible options for a command-line.
  * <p>
  * It may flexibly parse long and short options, with or without
  * values.  Additionally, it may parse only a portion of a commandline,
  * allowing for flexible multi-stage parsing.
  *
- * @see org.apache.commons.cli.CommandLine
+ * @see CommandLine
  *
  * @version $Id: Options.java 1754332 2016-07-27 18:47:57Z britter $
  */
@@ -46,10 +46,10 @@ public class Options implements Serializable
     private static final long serialVersionUID = 1L;
 
     /** a map of the options with the character key */
-    private final Map<String, Option> shortOpts = new LinkedHashMap<String, Option>();
+    private final Map<String, org.apache.cli.Option> shortOpts = new LinkedHashMap<String, org.apache.cli.Option>();
 
     /** a map of the options with the long key */
-    private final Map<String, Option> longOpts = new LinkedHashMap<String, Option>();
+    private final Map<String, org.apache.cli.Option> longOpts = new LinkedHashMap<String, org.apache.cli.Option>();
 
     /** a map of the required options */
     // N.B. This can contain either a String (addOption) or an OptionGroup (addOptionGroup)
@@ -57,7 +57,7 @@ public class Options implements Serializable
     private final List<Object> requiredOpts = new ArrayList<Object>();
 
     /** a map of the option groups */
-    private final Map<String, OptionGroup> optionGroups = new LinkedHashMap<String, OptionGroup>();
+    private final Map<String, org.apache.cli.OptionGroup> optionGroups = new LinkedHashMap<String, org.apache.cli.OptionGroup>();
 
     /**
      * Add the specified option group.
@@ -65,14 +65,14 @@ public class Options implements Serializable
      * @param group the OptionGroup that is to be added
      * @return the resulting Options instance
      */
-    public Options addOptionGroup(OptionGroup group)
+    public Options addOptionGroup(org.apache.cli.OptionGroup group)
     {
         if (group.isRequired())
         {
             requiredOpts.add(group);
         }
 
-        for (Option option : group.getOptions())
+        for (org.apache.cli.Option option : group.getOptions())
         {
             // an Option cannot be required if it is in an
             // OptionGroup, either the group is required or
@@ -91,9 +91,9 @@ public class Options implements Serializable
      *
      * @return a Collection of OptionGroup instances.
      */
-    Collection<OptionGroup> getOptionGroups()
+    Collection<org.apache.cli.OptionGroup> getOptionGroups()
     {
-        return new HashSet<OptionGroup>(optionGroups.values());
+        return new HashSet<org.apache.cli.OptionGroup>(optionGroups.values());
     }
 
     /**
@@ -147,7 +147,7 @@ public class Options implements Serializable
      */
     public Options addOption(String opt, String longOpt, boolean hasArg, String description)
     {
-        addOption(new Option(opt, longOpt, hasArg, description));
+        addOption(new org.apache.cli.Option(opt, longOpt, hasArg, description));
         return this;
     }
 
@@ -175,7 +175,8 @@ public class Options implements Serializable
      */
     public Options addRequiredOption(String opt, String longOpt, boolean hasArg, String description)
     {
-        Option option = new Option(opt, longOpt, hasArg, description);
+        org.apache.cli.Option
+            option = new org.apache.cli.Option(opt, longOpt, hasArg, description);
         option.setRequired(true);
         addOption(option);
         return this;
@@ -187,7 +188,7 @@ public class Options implements Serializable
      * @param opt the option that is to be added
      * @return the resulting Options instance
      */
-    public Options addOption(Option opt)
+    public Options addOption(org.apache.cli.Option opt)
     {
         String key = opt.getKey();
 
@@ -215,9 +216,9 @@ public class Options implements Serializable
     /**
      * Retrieve a read-only list of options in this set
      *
-     * @return read-only Collection of {@link Option} objects in this descriptor
+     * @return read-only Collection of {@link org.apache.cli.Option} objects in this descriptor
      */
-    public Collection<Option> getOptions()
+    public Collection<org.apache.cli.Option> getOptions()
     {
         return Collections.unmodifiableCollection(helpOptions());
     }
@@ -227,9 +228,9 @@ public class Options implements Serializable
      *
      * @return the List of Options
      */
-    List<Option> helpOptions()
+    List<org.apache.cli.Option> helpOptions()
     {
-        return new ArrayList<Option>(shortOpts.values());
+        return new ArrayList<org.apache.cli.Option>(shortOpts.values());
     }
 
     /**
@@ -243,16 +244,16 @@ public class Options implements Serializable
     }
 
     /**
-     * Retrieve the {@link Option} matching the long or short name specified.
+     * Retrieve the {@link org.apache.cli.Option} matching the long or short name specified.
      *
      * <p>
      * The leading hyphens in the name are ignored (up to 2).
      * </p>
      *
-     * @param opt short or long name of the {@link Option}
+     * @param opt short or long name of the {@link org.apache.cli.Option}
      * @return the option represented by opt
      */
-    public Option getOption(String opt)
+    public org.apache.cli.Option getOption(String opt)
     {
         opt = Util.stripLeadingHyphens(opt);
 
@@ -295,10 +296,10 @@ public class Options implements Serializable
     }
 
     /**
-     * Returns whether the named {@link Option} is a member of this {@link Options}.
+     * Returns whether the named {@link org.apache.cli.Option} is a member of this {@link Options}.
      *
-     * @param opt short or long name of the {@link Option}
-     * @return true if the named {@link Option} is a member of this {@link Options}
+     * @param opt short or long name of the {@link org.apache.cli.Option}
+     * @return true if the named {@link org.apache.cli.Option} is a member of this {@link Options}
      */
     public boolean hasOption(String opt)
     {
@@ -308,10 +309,10 @@ public class Options implements Serializable
     }
 
     /**
-     * Returns whether the named {@link Option} is a member of this {@link Options}.
+     * Returns whether the named {@link org.apache.cli.Option} is a member of this {@link Options}.
      *
-     * @param opt long name of the {@link Option}
-     * @return true if the named {@link Option} is a member of this {@link Options}
+     * @param opt long name of the {@link org.apache.cli.Option}
+     * @return true if the named {@link org.apache.cli.Option} is a member of this {@link Options}
      * @since 1.3
      */
     public boolean hasLongOption(String opt)
@@ -322,10 +323,10 @@ public class Options implements Serializable
     }
 
     /**
-     * Returns whether the named {@link Option} is a member of this {@link Options}.
+     * Returns whether the named {@link org.apache.cli.Option} is a member of this {@link Options}.
      *
-     * @param opt short name of the {@link Option}
-     * @return true if the named {@link Option} is a member of this {@link Options}
+     * @param opt short name of the {@link org.apache.cli.Option}
+     * @return true if the named {@link org.apache.cli.Option} is a member of this {@link Options}
      * @since 1.3
      */
     public boolean hasShortOption(String opt)

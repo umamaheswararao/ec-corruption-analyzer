@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package org.apache.commons.cli;
+package org.apache.cli;
 
 /**
  * Thrown when more than one option in an option group
@@ -31,10 +31,10 @@ public class AlreadySelectedException extends ParseException
     private static final long serialVersionUID = 3674381532418544760L;
 
     /** The option group selected. */
-    private OptionGroup group;
+    private org.apache.cli.OptionGroup group;
 
     /** The option that triggered the exception. */
-    private Option option;
+    private org.apache.cli.Option option;
 
     /**
      * Construct a new <code>AlreadySelectedException</code>
@@ -55,7 +55,8 @@ public class AlreadySelectedException extends ParseException
      * @param option the option that triggered the exception
      * @since 1.2
      */
-    public AlreadySelectedException(OptionGroup group, Option option)
+    public AlreadySelectedException(
+        org.apache.cli.OptionGroup group, org.apache.cli.Option option)
     {
         this("The option '" + option.getKey() + "' was specified but an option from this group "
                 + "has already been selected: '" + group.getSelected() + "'");

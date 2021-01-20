@@ -15,26 +15,26 @@
  * limitations under the License.
  */
 
-package org.apache.commons.cli;
+package org.apache.cli;
 
 /**
  * The class BasicParser provides a very simple implementation of
- * the {@link Parser#flatten(Options,String[],boolean) flatten} method.
+ * the {@link org.apache.cli.Parser#flatten(org.apache.cli.Options,String[],boolean) flatten} method.
  *
  * @version $Id: BasicParser.java 1443102 2013-02-06 18:12:16Z tn $
  * @deprecated since 1.3, use the {@link DefaultParser} instead
  */
 @Deprecated
-public class BasicParser extends Parser
+public class BasicParser extends org.apache.cli.Parser
 {
     /**
-     * <p>A simple implementation of {@link Parser}'s abstract
-     * {@link Parser#flatten(Options, String[], boolean) flatten} method.</p>
+     * <p>A simple implementation of {@link org.apache.cli.Parser}'s abstract
+     * {@link Parser#flatten(org.apache.cli.Options, String[], boolean) flatten} method.</p>
      *
      * <p><b>Note:</b> <code>options</code> and <code>stopAtNonOption</code>
      * are not used in this <code>flatten</code> method.</p>
      *
-     * @param options The command line {@link Options}
+     * @param options The command line {@link org.apache.cli.Options}
      * @param arguments The command line arguments to be parsed
      * @param stopAtNonOption Specifies whether to stop flattening
      * when an non option is found.

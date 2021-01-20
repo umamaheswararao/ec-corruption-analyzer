@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package org.apache.commons.cli;
+package org.apache.cli;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -39,7 +39,7 @@ public class PosixParser extends Parser
     private boolean eatTheRest;
 
     /** holder for the current option */
-    private Option currentOption;
+    private org.apache.cli.Option currentOption;
 
     /** the command line Options */
     private Options options;
@@ -71,8 +71,8 @@ public class PosixParser extends Parser
      *  just add the entry to the list of processed tokens</li>
      *  <li>if the current <code>arguments</code> entry is two characters
      *  in length and the first character is "<b>-</b>" then check if this
-     *  is a valid {@link Option} id.  If it is a valid id, then add the
-     *  entry to the list of processed tokens and set the current {@link Option}
+     *  is a valid {@link org.apache.cli.Option} id.  If it is a valid id, then add the
+     *  entry to the list of processed tokens and set the current {@link org.apache.cli.Option}
      *  member.  If it is not a valid id and <code>stopAtNonOption</code>
      *  is true, then the remaining entries are copied to the list of
      *  processed tokens.  Otherwise, the current entry is ignored.</li>
@@ -93,7 +93,8 @@ public class PosixParser extends Parser
      * @return The flattened <code>arguments</code> String array.
      */
     @Override
-    protected String[] flatten(Options options, String[] arguments, boolean stopAtNonOption) throws ParseException
+    protected String[] flatten(Options options, String[] arguments, boolean stopAtNonOption) throws
+        ParseException
     {
         init();
         this.options = options;
@@ -154,7 +155,7 @@ public class PosixParser extends Parser
                     {
                         throw new AmbiguousOptionException(token, matchingOpts);
                     }
-                    Option opt = options.getOption(matchingOpts.get(0));
+                    org.apache.cli.Option opt = options.getOption(matchingOpts.get(0));
                     processOptionToken("-" + opt.getLongOpt(), stopAtNonOption);
                 }
                 // requires bursting
@@ -209,10 +210,10 @@ public class PosixParser extends Parser
     }
 
     /**
-     * <p>If an {@link Option} exists for <code>token</code> then
+     * <p>If an {@link org.apache.cli.Option} exists for <code>token</code> then
      * add the token to the processed list.</p>
      *
-     * <p>If an {@link Option} does not exist and <code>stopAtNonOption</code>
+     * <p>If an {@link org.apache.cli.Option} does not exist and <code>stopAtNonOption</code>
      * is set then add the remaining tokens to the processed tokens list
      * directly.</p>
      *
@@ -241,14 +242,14 @@ public class PosixParser extends Parser
      *
      * <ul>
      *  <li>ignore the first character ("<b>-</b>")</li>
-     *  <li>for each remaining character check if an {@link Option}
+     *  <li>for each remaining character check if an {@link org.apache.cli.Option}
      *  exists with that id.</li>
-     *  <li>if an {@link Option} does exist then add that character
+     *  <li>if an {@link org.apache.cli.Option} does exist then add that character
      *  prepended with "<b>-</b>" to the list of processed tokens.</li>
-     *  <li>if the {@link Option} can have an argument value and there
+     *  <li>if the {@link org.apache.cli.Option} can have an argument value and there
      *  are remaining characters in the token then add the remaining
      *  characters as a token to the list of processed tokens.</li>
-     *  <li>if an {@link Option} does <b>NOT</b> exist <b>AND</b>
+     *  <li>if an {@link org.apache.cli.Option} does <b>NOT</b> exist <b>AND</b>
      *  <code>stopAtNonOption</code> <b>IS</b> set then add the special token
      *  "<b>--</b>" followed by the remaining characters and also
      *  the remaining tokens directly to the processed tokens list.</li>

@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package org.apache.commons.cli;
+package org.apache.cli;
 
 /**
  * Thrown when an option requiring an argument
@@ -31,7 +31,7 @@ public class MissingArgumentException extends ParseException
     private static final long serialVersionUID = -7098538588704965017L;
 
     /** The option requiring additional arguments */
-    private Option option;
+    private org.apache.cli.Option option;
 
     /**
      * Construct a new <code>MissingArgumentException</code>
@@ -51,7 +51,7 @@ public class MissingArgumentException extends ParseException
      * @param option the option requiring an argument
      * @since 1.2
      */
-    public MissingArgumentException(Option option)
+    public MissingArgumentException(org.apache.cli.Option option)
     {
         this("Missing argument for option: " + option.getKey());
         this.option = option;

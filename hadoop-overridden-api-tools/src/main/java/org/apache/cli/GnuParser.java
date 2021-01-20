@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package org.apache.commons.cli;
+package org.apache.cli;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -33,7 +33,7 @@ public class GnuParser extends Parser
     /**
      * This flatten method does so using the following rules:
      * <ol>
-     *   <li>If an {@link Option} exists for the first character of
+     *   <li>If an {@link org.apache.cli.Option} exists for the first character of
      *   the <code>arguments</code> entry <b>AND</b> an {@link Option}
      *   does not exist for the whole <code>argument</code> then
      *   add the first character as an option to the processed tokens

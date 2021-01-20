@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package org.apache.commons.cli;
+package org.apache.cli;
 
 import java.io.Serializable;
 import java.util.Collection;
@@ -34,7 +34,7 @@ public class OptionGroup implements Serializable
     private static final long serialVersionUID = 1L;
     
     /** hold the options */
-    private final Map<String, Option> optionMap = new LinkedHashMap<String, Option>();
+    private final Map<String, org.apache.cli.Option> optionMap = new LinkedHashMap<String, org.apache.cli.Option>();
 
     /** the name of the selected option */
     private String selected;
@@ -48,7 +48,7 @@ public class OptionGroup implements Serializable
      * @param option the option to add to this group
      * @return this option group with the option added
      */
-    public OptionGroup addOption(Option option)
+    public OptionGroup addOption(org.apache.cli.Option option)
     {
         // key   - option name
         // value - the option
@@ -70,7 +70,7 @@ public class OptionGroup implements Serializable
     /**
      * @return the options in this group as a <code>Collection</code>
      */
-    public Collection<Option> getOptions()
+    public Collection<org.apache.cli.Option> getOptions()
     {
         // the values are the collection of options
         return optionMap.values();
@@ -83,7 +83,7 @@ public class OptionGroup implements Serializable
      * @throws AlreadySelectedException if an option from this group has 
      * already been selected.
      */
-    public void setSelected(Option option) throws AlreadySelectedException
+    public void setSelected(org.apache.cli.Option option) throws AlreadySelectedException
     {
         if (option == null)
         {
@@ -141,7 +141,7 @@ public class OptionGroup implements Serializable
     {
         StringBuilder buff = new StringBuilder();
         
-        Iterator<Option> iter = getOptions().iterator();
+        Iterator<org.apache.cli.Option> iter = getOptions().iterator();
 
         buff.append("[");
 

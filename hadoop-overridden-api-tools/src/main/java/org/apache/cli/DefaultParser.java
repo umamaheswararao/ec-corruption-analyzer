@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package org.apache.commons.cli;
+package org.apache.cli;
 
 import java.util.ArrayList;
 import java.util.Enumeration;
@@ -31,7 +31,7 @@ import java.util.Properties;
 public class DefaultParser implements CommandLineParser
 {
     /** The command-line instance. */
-    protected CommandLine cmd;
+    protected org.apache.cli.CommandLine cmd;
     
     /** The current options. */
     protected Options options;
@@ -47,7 +47,7 @@ public class DefaultParser implements CommandLineParser
     protected String currentToken;
  
     /** The last option parsed. */
-    protected Option currentOption;
+    protected org.apache.cli.Option currentOption;
  
     /** Flag indicating if tokens should no longer be analyzed and simply added as arguments of the command line. */
     protected boolean skipParsing;
@@ -55,7 +55,8 @@ public class DefaultParser implements CommandLineParser
     /** The required options and groups expected to be found when parsing the command line. */
     protected List expectedOpts;
  
-    public CommandLine parse(Options options, String[] arguments) throws ParseException
+    public org.apache.cli.CommandLine parse(Options options, String[] arguments) throws
+        org.apache.cli.ParseException
     {
         return parse(options, arguments, null);
     }
@@ -68,15 +69,17 @@ public class DefaultParser implements CommandLineParser
      * @param properties command line option name-value pairs
      * @return the list of atomic option and value tokens
      *
-     * @throws ParseException if there are any problems encountered
+     * @throws org.apache.cli.ParseException if there are any problems encountered
      * while parsing the command line tokens.
      */
-    public CommandLine parse(Options options, String[] arguments, Properties properties) throws ParseException
+    public org.apache.cli.CommandLine parse(Options options, String[] arguments, Properties properties) throws
+        org.apache.cli.ParseException
     {
         return parse(options, arguments, properties, false);
     }
 
-    public CommandLine parse(Options options, String[] arguments, boolean stopAtNonOption) throws ParseException
+    public org.apache.cli.CommandLine parse(Options options, String[] arguments, boolean stopAtNonOption) throws
+        org.apache.cli.ParseException
     {
         return parse(options, arguments, null, stopAtNonOption);
     }
@@ -89,15 +92,15 @@ public class DefaultParser implements CommandLineParser
      * @param properties      command line option name-value pairs
      * @param stopAtNonOption if <tt>true</tt> an unrecognized argument stops
      *     the parsing and the remaining arguments are added to the 
-     *     {@link CommandLine}s args list. If <tt>false</tt> an unrecognized
+     *     {@link org.apache.cli.CommandLine}s args list. If <tt>false</tt> an unrecognized
      *     argument triggers a ParseException.
      *
      * @return the list of atomic option and value tokens
-     * @throws ParseException if there are any problems encountered
+     * @throws org.apache.cli.ParseException if there are any problems encountered
      * while parsing the command line tokens.
      */
-    public CommandLine parse(Options options, String[] arguments, Properties properties, boolean stopAtNonOption)
-            throws ParseException
+    public org.apache.cli.CommandLine parse(Options options, String[] arguments, Properties properties, boolean stopAtNonOption)
+            throws org.apache.cli.ParseException
     {
         this.options = options;
         this.stopAtNonOption = stopAtNonOption;
@@ -106,7 +109,7 @@ public class DefaultParser implements CommandLineParser
         expectedOpts = new ArrayList(options.getRequiredOptions());
 
         // clear the data from the groups
-        for (OptionGroup group : options.getOptionGroups())
+        for (org.apache.cli.OptionGroup group : options.getOptionGroups())
         {
             group.setSelected(null);
         }
@@ -137,7 +140,7 @@ public class DefaultParser implements CommandLineParser
      *
      * @param properties The value properties to be processed.
      */
-    private void handleProperties(Properties properties) throws ParseException
+    private void handleProperties(Properties properties) throws org.apache.cli.ParseException
     {
         if (properties == null)
         {
@@ -148,14 +151,14 @@ public class DefaultParser implements CommandLineParser
         {
             String option = e.nextElement().toString();
 
-            Option opt = options.getOption(option);
+            org.apache.cli.Option opt = options.getOption(option);
             if (opt == null)
             {
                 throw new UnrecognizedOptionException("Default option wasn't defined", option);
             }
 
             // if the option is part of a group, check if another option of the group has been selected
-            OptionGroup group = options.getOptionGroup(opt);
+            org.apache.cli.OptionGroup group = options.getOptionGroup(opt);
             boolean selected = group != null && group.getSelected() != null;
 
             if (!cmd.hasOption(option) && !selected)
@@ -204,7 +207,7 @@ public class DefaultParser implements CommandLineParser
      * Throw a {@link MissingArgumentException} if the current option
      * didn't receive the number of arguments expected.
      */
-    private void checkRequiredArgs() throws ParseException
+    private void checkRequiredArgs() throws org.apache.cli.ParseException
     {
         if (currentOption != null && currentOption.requiresArg())
         {
@@ -216,9 +219,9 @@ public class DefaultParser implements CommandLineParser
      * Handle any command line token.
      *
      * @param token the command line token to handle
-     * @throws ParseException
+     * @throws org.apache.cli.ParseException
      */
-    private void handleToken(String token) throws ParseException
+    private void handleToken(String token) throws org.apache.cli.ParseException
     {
         currentToken = token;
 
@@ -353,7 +356,7 @@ public class DefaultParser implements CommandLineParser
      *
      * @param token the command line token to handle
      */
-    private void handleUnknownToken(String token) throws ParseException
+    private void handleUnknownToken(String token) throws org.apache.cli.ParseException
     {
         if (token.startsWith("-") && token.length() > 1 && !stopAtNonOption)
         {
@@ -377,7 +380,7 @@ public class DefaultParser implements CommandLineParser
      *
      * @param token the command line token to handle
      */
-    private void handleLongOption(String token) throws ParseException
+    private void handleLongOption(String token) throws org.apache.cli.ParseException
     {
         if (token.indexOf('=') == -1)
         {
@@ -399,7 +402,7 @@ public class DefaultParser implements CommandLineParser
      * 
      * @param token the command line token to handle
      */
-    private void handleLongOptionWithoutEqual(String token) throws ParseException
+    private void handleLongOptionWithoutEqual(String token) throws org.apache.cli.ParseException
     {
         List<String> matchingOpts = options.getMatchingOptions(token);
         if (matchingOpts.isEmpty())
@@ -426,7 +429,7 @@ public class DefaultParser implements CommandLineParser
      *
      * @param token the command line token to handle
      */
-    private void handleLongOptionWithEqual(String token) throws ParseException
+    private void handleLongOptionWithEqual(String token) throws org.apache.cli.ParseException
     {
         int pos = token.indexOf('=');
 
@@ -445,7 +448,7 @@ public class DefaultParser implements CommandLineParser
         }
         else
         {
-            Option option = options.getOption(matchingOpts.get(0));
+            org.apache.cli.Option option = options.getOption(matchingOpts.get(0));
 
             if (option.acceptsArg())
             {
@@ -479,7 +482,7 @@ public class DefaultParser implements CommandLineParser
      *
      * @param token the command line token to handle
      */
-    private void handleShortAndLongOption(String token) throws ParseException
+    private void handleShortAndLongOption(String token) throws org.apache.cli.ParseException
     {
         String t = Util.stripLeadingHyphens(token);
 
@@ -543,7 +546,7 @@ public class DefaultParser implements CommandLineParser
             if (opt.length() == 1)
             {
                 // -S=V
-                Option option = options.getOption(opt);
+                org.apache.cli.Option option = options.getOption(opt);
                 if (option != null && option.acceptsArg())
                 {
                     handleOption(option);
@@ -601,17 +604,17 @@ public class DefaultParser implements CommandLineParser
     private boolean isJavaProperty(String token)
     {
         String opt = token.substring(0, 1);
-        Option option = options.getOption(opt);
+        org.apache.cli.Option option = options.getOption(opt);
 
-        return option != null && (option.getArgs() >= 2 || option.getArgs() == Option.UNLIMITED_VALUES);
+        return option != null && (option.getArgs() >= 2 || option.getArgs() == org.apache.cli.Option.UNLIMITED_VALUES);
     }
 
-    private void handleOption(Option option) throws ParseException
+    private void handleOption(org.apache.cli.Option option) throws org.apache.cli.ParseException
     {
         // check the previous option before handling the next one
         checkRequiredArgs();
 
-        option = (Option) option.clone();
+        option = (org.apache.cli.Option) option.clone();
 
         updateRequiredOptions(option);
 
@@ -632,7 +635,7 @@ public class DefaultParser implements CommandLineParser
      *
      * @param option
      */
-    private void updateRequiredOptions(Option option) throws AlreadySelectedException
+    private void updateRequiredOptions(org.apache.cli.Option option) throws AlreadySelectedException
     {
         if (option.isRequired())
         {
@@ -659,14 +662,14 @@ public class DefaultParser implements CommandLineParser
      *
      * <ul>
      *  <li>ignore the first character ("<b>-</b>")</li>
-     *  <li>for each remaining character check if an {@link Option}
+     *  <li>for each remaining character check if an {@link org.apache.cli.Option}
      *  exists with that id.</li>
-     *  <li>if an {@link Option} does exist then add that character
+     *  <li>if an {@link org.apache.cli.Option} does exist then add that character
      *  prepended with "<b>-</b>" to the list of processed tokens.</li>
-     *  <li>if the {@link Option} can have an argument value and there
+     *  <li>if the {@link org.apache.cli.Option} can have an argument value and there
      *  are remaining characters in the token then add the remaining
      *  characters as a token to the list of processed tokens.</li>
-     *  <li>if an {@link Option} does <b>NOT</b> exist <b>AND</b>
+     *  <li>if an {@link org.apache.cli.Option} does <b>NOT</b> exist <b>AND</b>
      *  <code>stopAtNonOption</code> <b>IS</b> set then add the special token
      *  "<b>--</b>" followed by the remaining characters and also
      *  the remaining tokens directly to the processed tokens list.</li>
@@ -677,7 +680,7 @@ public class DefaultParser implements CommandLineParser
      *
      * @param token The current token to be <b>burst</b>
      * at the first non-Option encountered.
-     * @throws ParseException if there are any problems encountered
+     * @throws org.apache.cli.ParseException if there are any problems encountered
      *                        while parsing the command line token.
      */
     protected void handleConcatenatedOptions(String token) throws ParseException

@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package org.apache.commons.cli;
+package org.apache.cli;
 
 import java.io.File;
 
@@ -42,9 +42,9 @@ public class TypeHandler
      * @param obj the type of argument
      * @return The instance of <code>obj</code> initialised with
      * the value of <code>str</code>.
-     * @throws ParseException if the value creation for the given object type failed
+     * @throws org.apache.cli.ParseException if the value creation for the given object type failed
      */
-    public static Object createValue(String str, Object obj) throws ParseException
+    public static Object createValue(String str, Object obj) throws org.apache.cli.ParseException
     {
         return createValue(str, (Class<?>) obj);
     }
@@ -57,39 +57,39 @@ public class TypeHandler
      * @param clazz the type of argument
      * @return The instance of <code>clazz</code> initialised with
      * the value of <code>str</code>.
-     * @throws ParseException if the value creation for the given class failed
+     * @throws org.apache.cli.ParseException if the value creation for the given class failed
      */
-    public static Object createValue(String str, Class<?> clazz) throws ParseException
+    public static Object createValue(String str, Class<?> clazz) throws org.apache.cli.ParseException
     {
-        if (PatternOptionBuilder.STRING_VALUE == clazz)
+        if (org.apache.cli.PatternOptionBuilder.STRING_VALUE == clazz)
         {
             return str;
         }
-        else if (PatternOptionBuilder.OBJECT_VALUE == clazz)
+        else if (org.apache.cli.PatternOptionBuilder.OBJECT_VALUE == clazz)
         {
             return createObject(str);
         }
-        else if (PatternOptionBuilder.NUMBER_VALUE == clazz)
+        else if (org.apache.cli.PatternOptionBuilder.NUMBER_VALUE == clazz)
         {
             return createNumber(str);
         }
-        else if (PatternOptionBuilder.DATE_VALUE == clazz)
+        else if (org.apache.cli.PatternOptionBuilder.DATE_VALUE == clazz)
         {
             return createDate(str);
         }
-        else if (PatternOptionBuilder.CLASS_VALUE == clazz)
+        else if (org.apache.cli.PatternOptionBuilder.CLASS_VALUE == clazz)
         {
             return createClass(str);
         }
-        else if (PatternOptionBuilder.FILE_VALUE == clazz)
+        else if (org.apache.cli.PatternOptionBuilder.FILE_VALUE == clazz)
         {
             return createFile(str);
         }
-        else if (PatternOptionBuilder.EXISTING_FILE_VALUE == clazz)
+        else if (org.apache.cli.PatternOptionBuilder.EXISTING_FILE_VALUE == clazz)
         {
             return createFile(str);
         }
-        else if (PatternOptionBuilder.FILES_VALUE == clazz)
+        else if (org.apache.cli.PatternOptionBuilder.FILES_VALUE == clazz)
         {
             return createFiles(str);
         }
@@ -108,9 +108,9 @@ public class TypeHandler
       *
       * @param classname the argument value
       * @return the initialised object
-      * @throws ParseException if the class could not be found or the object could not be created
+      * @throws org.apache.cli.ParseException if the class could not be found or the object could not be created
       */
-    public static Object createObject(String classname) throws ParseException
+    public static Object createObject(String classname) throws org.apache.cli.ParseException
     {
         Class<?> cl;
 
@@ -120,7 +120,7 @@ public class TypeHandler
         }
         catch (ClassNotFoundException cnfe)
         {
-            throw new ParseException("Unable to find the class: " + classname);
+            throw new org.apache.cli.ParseException("Unable to find the class: " + classname);
         }
         
         try
@@ -129,7 +129,7 @@ public class TypeHandler
         }
         catch (Exception e)
         {
-            throw new ParseException(e.getClass().getName() + "; Unable to create an instance of: " + classname);
+            throw new org.apache.cli.ParseException(e.getClass().getName() + "; Unable to create an instance of: " + classname);
         }
     }
 
@@ -139,9 +139,9 @@ public class TypeHandler
      *
      * @param str the value
      * @return the number represented by <code>str</code>
-     * @throws ParseException if <code>str</code> is not a number
+     * @throws org.apache.cli.ParseException if <code>str</code> is not a number
      */
-    public static Number createNumber(String str) throws ParseException
+    public static Number createNumber(String str) throws org.apache.cli.ParseException
     {
         try
         {
@@ -153,7 +153,7 @@ public class TypeHandler
         }
         catch (NumberFormatException e)
         {
-            throw new ParseException(e.getMessage());
+            throw new org.apache.cli.ParseException(e.getMessage());
         }
     }
 
@@ -162,9 +162,9 @@ public class TypeHandler
      *
      * @param classname the class name
      * @return The class if it is found
-     * @throws ParseException if the class could not be found
+     * @throws org.apache.cli.ParseException if the class could not be found
      */
-    public static Class<?> createClass(String classname) throws ParseException
+    public static Class<?> createClass(String classname) throws org.apache.cli.ParseException
     {
         try
         {
@@ -172,7 +172,7 @@ public class TypeHandler
         }
         catch (ClassNotFoundException e)
         {
-            throw new ParseException("Unable to find the class: " + classname);
+            throw new org.apache.cli.ParseException("Unable to find the class: " + classname);
         }
     }
 
@@ -197,9 +197,9 @@ public class TypeHandler
      *
      * @param str the URL string
      * @return The URL in <code>str</code> is well-formed
-     * @throws ParseException if the URL in <code>str</code> is not well-formed
+     * @throws org.apache.cli.ParseException if the URL in <code>str</code> is not well-formed
      */
-    public static URL createURL(String str) throws ParseException
+    public static URL createURL(String str) throws org.apache.cli.ParseException
     {
         try
         {

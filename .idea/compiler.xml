@@ -9,5 +9,8 @@
         <module name="ec-corruption-analyzer" />
       </profile>
     </annotationProcessing>
+    <bytecodeTargetLevel>
+      <module name="hadoop-overridden-api-tools" target="1.8" />
+    </bytecodeTargetLevel>
   </component>
 </project>

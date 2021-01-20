@@ -20,4 +20,4 @@
  * 
  * @version $Id: package-info.java 1443102 2013-02-06 18:12:16Z tn $
  */
-package org.apache.commons.cli;
+package org.apache.cli;

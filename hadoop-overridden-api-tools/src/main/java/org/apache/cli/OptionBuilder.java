@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package org.apache.commons.cli;
+package org.apache.cli;
 
 /**
  * OptionBuilder allows the user to create Options using descriptive methods.
@@ -27,7 +27,7 @@ package org.apache.commons.cli;
  * 
  * @version $Id: OptionBuilder.java 1677400 2015-05-03 13:46:08Z britter $
  * @since 1.0
- * @deprecated since 1.3, use {@link Option#builder(String)} instead
+ * @deprecated since 1.3, use {@link org.apache.cli.Option#builder(String)} instead
  */
 @Deprecated
 public final class OptionBuilder
@@ -45,7 +45,7 @@ public final class OptionBuilder
     private static boolean required;
 
     /** the number of arguments */
-    private static int numberOfArgs = Option.UNINITIALIZED;
+    private static int numberOfArgs = org.apache.cli.Option.UNINITIALIZED;
 
     /** option type */
     private static Class<?> type;
@@ -83,7 +83,7 @@ public final class OptionBuilder
         longopt = null;
         type = String.class;
         required = false;
-        numberOfArgs = Option.UNINITIALIZED;
+        numberOfArgs = org.apache.cli.Option.UNINITIALIZED;
         optionalArg = false;
         valuesep = (char) 0;
     }
@@ -122,7 +122,7 @@ public final class OptionBuilder
      */
     public static OptionBuilder hasArg(boolean hasArg)
     {
-        OptionBuilder.numberOfArgs = hasArg ? 1 : Option.UNINITIALIZED;
+        OptionBuilder.numberOfArgs = hasArg ? 1 : org.apache.cli.Option.UNINITIALIZED;
 
         return INSTANCE;
     }
@@ -222,7 +222,7 @@ public final class OptionBuilder
      */
     public static OptionBuilder hasArgs()
     {
-        OptionBuilder.numberOfArgs = Option.UNLIMITED_VALUES;
+        OptionBuilder.numberOfArgs = org.apache.cli.Option.UNLIMITED_VALUES;
 
         return INSTANCE;
     }
@@ -260,7 +260,7 @@ public final class OptionBuilder
      */
     public static OptionBuilder hasOptionalArgs()
     {
-        OptionBuilder.numberOfArgs = Option.UNLIMITED_VALUES;
+        OptionBuilder.numberOfArgs = org.apache.cli.Option.UNLIMITED_VALUES;
         OptionBuilder.optionalArg = true;
 
         return INSTANCE;
@@ -335,7 +335,7 @@ public final class OptionBuilder
      * @throws IllegalArgumentException if <code>opt</code> is not
      * a valid character.  See Option.
      */
-    public static Option create(char opt) throws IllegalArgumentException
+    public static org.apache.cli.Option create(char opt) throws IllegalArgumentException
     {
         return create(String.valueOf(opt));
     }
@@ -346,7 +346,7 @@ public final class OptionBuilder
      * @return the Option instance
      * @throws IllegalArgumentException if <code>longOpt</code> has not been set.
      */
-    public static Option create() throws IllegalArgumentException
+    public static org.apache.cli.Option create() throws IllegalArgumentException
     {
         if (longopt == null)
         {
@@ -367,9 +367,9 @@ public final class OptionBuilder
      * @throws IllegalArgumentException if <code>opt</code> is not
      * a valid character.  See Option.
      */
-    public static Option create(String opt) throws IllegalArgumentException
+    public static org.apache.cli.Option create(String opt) throws IllegalArgumentException
     {
-        Option option = null;
+        org.apache.cli.Option option = null;
         try
         {
             // create the option

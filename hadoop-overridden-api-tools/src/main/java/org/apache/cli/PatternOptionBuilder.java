@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package org.apache.commons.cli;
+package org.apache.cli;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -165,7 +165,7 @@ public class PatternOptionBuilder
             {
                 if (opt != ' ')
                 {
-                    final Option option = Option.builder(String.valueOf(opt))
+                    final org.apache.cli.Option option = org.apache.cli.Option.builder(String.valueOf(opt))
                         .hasArg(type != null)
                         .required(required)
                         .type(type)
@@ -192,7 +192,7 @@ public class PatternOptionBuilder
 
         if (opt != ' ')
         {
-            final Option option = Option.builder(String.valueOf(opt))
+            final org.apache.cli.Option option = Option.builder(String.valueOf(opt))
                 .hasArg(type != null)
                 .required(required)
                 .type(type)

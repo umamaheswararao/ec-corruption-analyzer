@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package org.apache.commons.cli;
+package org.apache.cli;
 
 import java.io.Serializable;
 import java.util.ArrayList;
@@ -34,8 +34,8 @@ import java.util.List;
  * <b>Note:</b> once an {@link Option} has been added to an instance
  * of {@link Options}, it's required flag may not be changed anymore.
  *
- * @see org.apache.commons.cli.Options
- * @see org.apache.commons.cli.CommandLine
+ * @see Options
+ * @see org.apache.cli.CommandLine
  *
  * @version $Id: Option.java 1756753 2016-08-18 10:18:43Z britter $
  */
@@ -184,7 +184,7 @@ public class Option implements Cloneable, Serializable
      * Retrieve the name of this Option.
      *
      * It is this String which can be used with
-     * {@link CommandLine#hasOption(String opt)} and
+     * {@link org.apache.cli.CommandLine#hasOption(String opt)} and
      * {@link CommandLine#getOptionValue(String opt)} to check
      * for existence and argument.
      *
