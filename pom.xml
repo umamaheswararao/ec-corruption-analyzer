@@ -16,7 +16,6 @@
     </properties>
 
     <build>
-        <sourceDirectory>.</sourceDirectory>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -24,9 +23,6 @@
                 <configuration>
                     <source>1.8</source>
                     <target>1.8</target>
-                    <includes>
-                        <include>src/main/java/org/apache/hadoop/hdfs/tools/*.java</include>
-                    </includes>
                 </configuration>
             </plugin>
             <plugin>
