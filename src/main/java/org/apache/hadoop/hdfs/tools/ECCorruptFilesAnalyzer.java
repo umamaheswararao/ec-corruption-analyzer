@@ -155,6 +155,7 @@ public class ECCorruptFilesAnalyzer {
 
     Path outPath = args.length > 2 ? new Path(args[2]) : null;
     HdfsConfiguration conf = new HdfsConfiguration();
+    conf.set("fs.defaultFS", "hdfs://uma-1.uma.root.hwx.site:9001");
     needSecureLogin =
         conf.getBoolean("ec.analyzer.need.secure.login", NEED_SECURE_LOGIN);
     checkAllZeros = conf.getBoolean("ec.analyzer.check.all.zero.blocks",
@@ -242,7 +243,9 @@ public class ECCorruptFilesAnalyzer {
 
   public static void processNamespace(List<Path> targetPaths,
       DistributedFileSystem dfs, ResultsProcessor results) throws IOException {
+    LOG.info("Number od directories/files given to scan: " + targetPaths.size());
     for (Path target : targetPaths) {
+      LOG.info("Scanning the directory/file: " + target);
       processPath(target.toUri().getPath(), dfs, results);
     }
   }
@@ -311,7 +314,7 @@ public class ECCorruptFilesAnalyzer {
     final ErasureCodingPolicy ecPolicy = locatedBlocks.getErasureCodingPolicy();
 
     if (ecPolicy != null) { //Found EC file
-      LOG.debug("Found EC file to scan:" + fullPath);
+      LOG.info("Scanning the EC file: " + fullPath);
       int totalBlockGrpNum =
           ecPolicy.getNumDataUnits() + ecPolicy.getNumParityUnits();
       final int cellSize = ecPolicy.getCellSize();
@@ -333,21 +336,36 @@ public class ECCorruptFilesAnalyzer {
               }
             });
         long oldestBlockTime = Long.MAX_VALUE;
+        long blkGrpActualSizeInBytes = firstBlock.getBlockSize();
+        final int stripeSize = cellSize * dataBlkNum;
+        long expectedNumBlocks = dataBlkNum;
+
+        // Find if we don't have the blocks really in blockgroup
+        if (blkGrpActualSizeInBytes < stripeSize) {
+          expectedNumBlocks = blkGrpActualSizeInBytes / cellSize;
+          if (blkGrpActualSizeInBytes % cellSize == 0) {
+            expectedNumBlocks++;
+          }
+        }
+
         for (int i=0; i< blocks.length; i++) {
           LocatedBlock block = blocks[i];
+
           if (block == null) {
-            LOG.debug(
-                "Block location is not reported to NN by any DN. So, ignoring this block from analysis. The block is:" + new org.apache.hadoop.hdfs.protocol.Block(
-                    firstBlock.getBlock()
-                        .getBlockId() + i) + " and the file name is: " + fullPath);
+            if ((i >= dataBlkNum || (i + 1) <= expectedNumBlocks)) {
+              LOG.info(
+                  "Block location is not reported to NN by any DN. So, ignoring this block from analysis. The block is:" + new org.apache.hadoop.hdfs.protocol.Block(
+                      firstBlock.getBlock()
+                          .getBlockId() + i) + " and the file name is: " + fullPath);
+            }
             continue;
           }
+          boolean isParity = isParityBlock(
+              block.getBlock(), dataBlkNum);
           String[] locs =
               Arrays.stream(block.getLocations()).map(datanodeInfo -> {
                 return datanodeInfo.getIpAddr();
               }).toArray(String[]::new);
-          boolean isParity = isParityBlock(
-              block.getBlock(), dataBlkNum);
           Long modifiedTime = stats.getModifiedTime(block.getBlock());
           String blockWithPath = stats.getBlockWithPath(block.getBlock());
 
@@ -414,6 +432,9 @@ public class ECCorruptFilesAnalyzer {
         }
       }
 
+      LOG.info(
+          "Scanning is finished for file :" + fullPath + " and num of possible impacted block groups : " + bgCorruptBlks
+              .size());
       if (bgCorruptBlks.size() > 0) {
         results.addToResult(fullPath,totalBlockGrpNum, bgCorruptBlks, ecPolicy.getName());
       }
@@ -701,7 +722,7 @@ public class ECCorruptFilesAnalyzer {
               BlockGroup blkGrp = blockGrpCorruptedBlocks.get(i);
               if (blkGrp.getBlocks().size() <= ecNameVsPolicy
                   .get(fileBlkGrps.getPolicyName()).getNumParityUnits()) {
-                LOG.info("Found recoverable block group in file:" + fileBlkGrps
+                LOG.debug("Found recoverable block group in file:" + fileBlkGrps
                     .getFileName() + " impacted blks : " + blkGrp.getBlocks());
                 for (Block blk : blkGrp.getBlocks()) {
                   //In EC, do we get more than one locations returned?
@@ -715,7 +736,7 @@ public class ECCorruptFilesAnalyzer {
                   safeBlocksToRename.put(blk.locations[0], paths);
                 }
               } else {
-                LOG.info(
+                LOG.debug(
                     "Found unrecoverable block group in file:" + fileBlkGrps
                         .getFileName() + " impacted blks : " + blkGrp
                         .getBlocks());
