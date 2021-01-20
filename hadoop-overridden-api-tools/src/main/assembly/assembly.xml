@@ -1,0 +1,17 @@
+<assembly>
+    <id></id> 
+    <formats>
+        <format>tar.gz</format>
+    </formats>
+    <fileSets>
+        <fileSet>
+            <directory>scripts</directory>
+        </fileSet>
+   </fileSets>
+   <files>
+    <file>
+          <source>target/eca-hadoop-overridden-api-tools-${project.version}.jar</source>
+          <outputDirectory></outputDirectory>
+    </file>
+   </files>
+</assembly>
