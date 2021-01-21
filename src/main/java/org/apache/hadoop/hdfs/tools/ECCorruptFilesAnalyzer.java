@@ -155,7 +155,6 @@ public class ECCorruptFilesAnalyzer {
 
     Path outPath = args.length > 2 ? new Path(args[2]) : null;
     HdfsConfiguration conf = new HdfsConfiguration();
-    conf.set("fs.defaultFS", "hdfs://uma-1.uma.root.hwx.site:9001");
     needSecureLogin =
         conf.getBoolean("ec.analyzer.need.secure.login", NEED_SECURE_LOGIN);
     checkAllZeros = conf.getBoolean("ec.analyzer.check.all.zero.blocks",
