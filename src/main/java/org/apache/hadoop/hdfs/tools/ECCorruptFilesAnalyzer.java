@@ -536,11 +536,19 @@ public class ECCorruptFilesAnalyzer {
             if (splits.length < 2) {
               System.out.println(
                   "Wrong block data found in file: " + file + ". skipping this entry: " + line);
+              line = br.readLine();
+              continue;
             }
             String timeStr = splits[0];
             String blockPathStr = splits[1];
             String blockPoolID = null;
             ExtendedBlock block = parseBlockString(blockPathStr);
+            if (block == null) {
+              LOG.warn(
+                  "Wrong block path found. Skipping it. The block path: " + line);
+              line = br.readLine();
+              continue;
+            }
             long currTimeInMillis = convert(timeStr);
             if (blockVsModifiedTime.containsKey(block)) {
               long oldTime = blockVsModifiedTime.get(block).time;
@@ -568,6 +576,12 @@ public class ECCorruptFilesAnalyzer {
           while (line != null) {
             String blockIdStr = line;
             ExtendedBlock block = parseBlockString(blockIdStr);
+            if (block == null) {
+              LOG.warn(
+                  "Wrong block path found. Skipping it. The block path: " + line);
+              line = br.readLine();
+              continue;
+            }
             allZeroBlockIds.add(block);
             line = br.readLine();
           }
@@ -576,6 +590,10 @@ public class ECCorruptFilesAnalyzer {
     }
 
     private ExtendedBlock parseBlockString(String blockStr) {
+      if(!blockStr.contains("/BP-")){
+        //Wrong block path found.;
+        return null;
+      }
       //Extract blockFile name
       String split1[] = blockStr.split("/");
       String blockFileStr = split1[split1.length - 1];
