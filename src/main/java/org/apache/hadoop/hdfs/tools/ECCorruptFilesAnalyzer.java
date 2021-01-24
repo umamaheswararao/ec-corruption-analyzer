@@ -39,6 +39,7 @@ import org.apache.hadoop.hdfs.protocol.HdfsLocatedFileStatus;
 import org.apache.hadoop.hdfs.protocol.LocatedBlock;
 import org.apache.hadoop.hdfs.protocol.LocatedBlocks;
 import org.apache.hadoop.hdfs.protocol.LocatedStripedBlock;
+import org.apache.hadoop.hdfs.protocol.SnapshottableDirectoryStatus;
 import org.apache.hadoop.hdfs.server.namenode.INode;
 import org.apache.hadoop.hdfs.util.StripedBlockUtil;
 import org.apache.curator.shaded.com.google.common.collect.Lists;
@@ -102,6 +103,7 @@ public class ECCorruptFilesAnalyzer {
   private static boolean checkAllZeros = CHECK_ALL_ZEROS_DEFAULT;
   private static Map<String, ErasureCodingPolicy> ecNameVsPolicy = new HashMap<>();
   private ResultsProcessor results;
+  private static final List<String> snapshottableDirs = new ArrayList<String>();
 
 
   public static void initStats(Path ecBlockStatsPath, Configuration conf)
@@ -197,6 +199,21 @@ public class ECCorruptFilesAnalyzer {
     analyzer.analyze(ecBlockStatsPath, targetPaths, outPath, conf);
   }
 
+  private void getSnapshottableDirs(DistributedFileSystem dfs) {
+    SnapshottableDirectoryStatus[] dirs = null;
+    try {
+      dirs = dfs.getSnapshottableDirListing();
+    } catch (IOException e) {
+      LOG.warn("Failed to get snapshottable directories."
+          + " Ignore and continue.", e);
+    }
+    if (dirs != null) {
+      for (SnapshottableDirectoryStatus dir : dirs) {
+        snapshottableDirs.add(dir.getFullPath().toString());
+      }
+    }
+  }
+
   public void analyze(Path ecBlockStatsPath, List<Path> targetPaths, Path outPath,
       Configuration conf)
       throws IOException, URISyntaxException, InterruptedException {
@@ -204,6 +221,7 @@ public class ECCorruptFilesAnalyzer {
     results = new ResultsProcessor(outPath, conf);
     try {
       dfs.initialize(FileSystem.getDefaultUri(conf), conf);
+      getSnapshottableDirs(dfs);
       for (ErasureCodingPolicyInfo ecInfo : dfs.getAllErasureCodingPolicies()) {
         ecNameVsPolicy.put(ecInfo.getPolicy().getName(), ecInfo.getPolicy());
       }
@@ -291,6 +309,11 @@ public class ECCorruptFilesAnalyzer {
         fullPath = fullPath + Path.SEPARATOR;
       }
       processPath(fullPath, dfs, results);
+      // process snapshots if this is a snapshottable directory
+      if (snapshottableDirs.contains(fullPath)) {
+        final String dirSnapshot = fullPath + HdfsConstants.DOT_SNAPSHOT_DIR;
+        processPath(dirSnapshot, dfs, results);
+      }
     } else if (!status.isSymlink()) { // file
       try {
         if (!isSnapshotPathInCurrent(fullPath, dfs)) {
