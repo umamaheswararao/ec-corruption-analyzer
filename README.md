@@ -45,8 +45,13 @@ Here input.txt can have multiple paths and keep each path as a separated line in
 ##### output:
 A path where to store the output results from the EC Corruption Analyzer tool.
 Here output can be a local file system path as well. If you want to store in a local file system, please make sure to give the output path prefixed with scheme. E.g.: file://user/ec-analysis
-This tool loads all the block information(by reading from /scanning folder) into memory. This will lead to high memory usage and we recommend to set the little high heap for this tool.  Please use the following way to set the heap memory.
-export HADOOP_CLIENT_OPTS="-Xmx128g $HADOOP_CLIENT_OPTS"
+
+This tool loads all the block information(by reading from /scanning folder) into memory. 
+This will lead to high memory usage and we recommend to set the little high heap for this tool.
+<pre>
+Please use the following way to set the heap memory.
+  export HADOOP_CLIENT_OPTS="-Xmx128g $HADOOP_CLIENT_OPTS"
+</pre>
  
 After successfully running this tool, the output folder contains 3 categories of results. In the output directory:
 #### ConsolidatedResult:
