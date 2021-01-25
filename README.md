@@ -100,6 +100,7 @@ Restart DataNodes that are participating in this rename operation.
 Tip: Check the RecoverableBlockGrpBlockPaths folder and under this folder file names supposed to be with hostname. So, of those filenames matching hosts needed the restart. 
 
 
+## Downloads
 The EC Corruption Analyzer tool can be downloaded at the following links:
       https://github.com/umamaheswararao/ec-corruption-analyzer/releases/
 
