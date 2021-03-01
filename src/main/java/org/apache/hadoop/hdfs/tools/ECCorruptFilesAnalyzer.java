@@ -444,6 +444,13 @@ public class ECCorruptFilesAnalyzer {
                     nextCreatedBlk.timeStamp) :
                 checkWithOldestBlk(oldestBlockTime, nextCreatedBlk.timeStamp)) {
               possibleCorruptions.add(nextCreatedBlk);
+            } else if(stats.allZeroBlockIds.contains(nextCreatedBlk.block)){
+              // If it's part of allZeros, let's not skip it at all.
+              // There is a possibility in extreme reconstructions that, allzero
+              // blocks can be turned as oldest block. In that case we assume it
+              // as base good block, but if it's part of allZeros, we should
+              // consider that block also as impacted block.
+              possibleCorruptions.add(nextCreatedBlk);
             }
           }
 
