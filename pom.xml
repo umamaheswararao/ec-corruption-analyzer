@@ -6,7 +6,7 @@
 
     <groupId>com.cloudera</groupId>
     <artifactId>ec-corruption-analyzer</artifactId>
-    <version>1.0-${hadoop.version}</version>
+    <version>1.1-${hadoop.version}</version>
     <packaging>jar</packaging>
     <properties>
         <hadoop.version>3.0.0-cdh6.3.4</hadoop.version>
